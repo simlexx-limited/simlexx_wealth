@@ -1,0 +1,81 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: DOCKERFILE
+    container_name: simlexx_api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - simlexx
+
+  worker:
+    build:
+      context: .
+      dockerfile: DOCKERFILE
+    container_name: simlexx_worker
+    command: celery -A app.queue.celery_app.celery_app worker --loglevel=info
+    volumes:
+      - ./app:/app/app
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - simlexx
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: simlexx_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-simlexx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-simlexx}
+      POSTGRES_DB: ${POSTGRES_DB:-simlexx}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-simlexx}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - simlexx
+
+  redis:
+    image: redis:7-alpine
+    container_name: simlexx_redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - simlexx
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  simlexx:
+    driver: bridge
