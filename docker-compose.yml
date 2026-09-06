@@ -39,7 +39,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    container_name: simlexx_postgres
+    container_name: simlexx_wealth_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-simlexx}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-simlexx}
@@ -49,7 +49,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-simlexx}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-simlexx} -d ${POSTGRES_DB:-simlexx}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -58,7 +58,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: simlexx_redis
+    container_name: simlexx_wealth_redis
     command: redis-server --appendonly yes
     ports:
       - "6379:6379"

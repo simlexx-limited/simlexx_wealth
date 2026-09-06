@@ -1,8 +1,8 @@
 venv/
 .venv/
-__pycache__/
-*.pyc
-*.pyo
+**/__pycache__/
+**/*.pyc
+**/*.pyo
 *.db
 *.sqlite3
 .git
@@ -10,6 +10,6 @@ __pycache__/
 .env
 *.env
 tests/
-.pytest_cache/
-.mypy_cache/
+**/.pytest_cache/
+**/.mypy_cache/
 README.md
