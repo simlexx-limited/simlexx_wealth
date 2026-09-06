@@ -1,11 +1,13 @@
-import os
-
 from celery import Celery
+
+from app.config.setting import get_settings
+
+settings = get_settings()
 
 celery_app = Celery(
     "simlexx",
-    broker=os.getenv("CELERY_BROKER_URL", "redis://redis:6379/0"),
-    backend=os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/1"),
+    broker=settings.CELERY_BROKER_URL,
+    backend=settings.CELERY_RESULT_BACKEND,
 )
 
 celery_app.conf.update(
@@ -14,4 +16,5 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    worker_concurrency=settings.MAX_WORKERS,
 )
