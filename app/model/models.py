@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Callable
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -88,7 +88,7 @@ class MoreAboutUsers(Base):
     first_name:Mapped[String] = mapped_column(String)
     last_name:Mapped[String] = mapped_column(String)
     middle_name:Mapped[String] = mapped_column(String, nullable=True)
-    date_of_birth:Mapped[datetime.date] = mapped_column(DateTime, nullable=False)
+    date_of_birth:Mapped[date] = mapped_column(DateTime, nullable=False)
     nationality:Mapped[String] = mapped_column(String, nullable=False)
     country_of_residence:Mapped[String] = mapped_column(String, nullable=False)
     city_of_residence:Mapped[String] = mapped_column(String, nullable=False)
