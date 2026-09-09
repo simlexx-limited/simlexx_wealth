@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Firebase Sign-In Tester</title>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --card: #ffffff;
+    --border: #e4e7ec;
+    --text: #1a1d23;
+    --muted: #6b7280;
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --secondary: #eef0f7;
+    --secondary-hover: #e2e5f1;
+    --ok-bg: #ecfdf3;
+    --ok-text: #067647;
+    --ok-border: #abefc6;
+    --err-bg: #fef3f2;
+    --err-text: #b42318;
+    --err-border: #fecdca;
+    --mono: "SF Mono", Consolas, Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 4rem;
+    line-height: 1.55;
+  }
+
+  .badge {
+    display: inline-block;
+    background: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fed7aa;
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    padding: .2rem .55rem;
+    border-radius: 999px;
+    margin-bottom: .8rem;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    margin: 0 0 .4rem;
+    letter-spacing: -.01em;
+  }
+
+  .intro {
+    color: var(--muted);
+    font-size: .92rem;
+    margin: 0 0 2rem;
+    max-width: 62ch;
+  }
+  .intro code {
+    background: var(--secondary);
+    padding: .1rem .35rem;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: .85em;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.4rem 1.5rem;
+    margin-bottom: 1.1rem;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    margin-bottom: .3rem;
+  }
+  .step-num {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    background: var(--primary);
+    color: #fff;
+    font-size: .8rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .card-header h2 {
+    font-size: 1rem;
+    margin: 0;
+    font-weight: 600;
+  }
+  .card-hint {
+    color: var(--muted);
+    font-size: .82rem;
+    margin: .2rem 0 .9rem 2.2rem;
+  }
+
+  .field-body { margin-left: 2.2rem; }
+
+  label {
+    display: block;
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin: .6rem 0 .25rem;
+  }
+  label:first-child { margin-top: 0; }
+
+  textarea, input[type=text], input[type=email], input[type=password], input[type=tel] {
+    width: 100%;
+    padding: .55rem .7rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: .88rem;
+    background: #fafbfc;
+    color: var(--text);
+    transition: border-color .15s, background .15s;
+  }
+  textarea { font-family: var(--mono); font-size: .82rem; resize: vertical; }
+  textarea:focus, input:focus {
+    outline: none;
+    border-color: var(--primary);
+    background: #fff;
+  }
+
+  .btn-row { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .8rem; }
+
+  button {
+    padding: .55rem 1rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    font-size: .85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, transform .05s;
+  }
+  button:active { transform: translateY(1px); }
+
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-hover); }
+
+  .btn-secondary { background: var(--secondary); color: var(--text); border-color: var(--border); }
+  .btn-secondary:hover { background: var(--secondary-hover); }
+
+  .btn-ghost { background: transparent; color: var(--primary); border-color: var(--border); padding: .35rem .7rem; font-size: .78rem; }
+  .btn-ghost:hover { background: var(--secondary); }
+
+  .status-pill {
+    display: none;
+    align-items: center;
+    gap: .4rem;
+    font-size: .8rem;
+    font-weight: 600;
+    padding: .3rem .65rem;
+    border-radius: 999px;
+    margin-top: .8rem;
+    width: fit-content;
+  }
+  .status-pill.show { display: inline-flex; }
+  .status-pill.ok { background: var(--ok-bg); color: var(--ok-text); border: 1px solid var(--ok-border); }
+  .status-pill.err { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-border); }
+
+  #result-status {
+    font-size: .92rem;
+    font-weight: 700;
+    padding: .6rem .9rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+  #result-status.ok { background: var(--ok-bg); color: var(--ok-text); border: 1px solid var(--ok-border); }
+  #result-status.err { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-border); }
+  #result-status:empty { display: none; }
+
+  .result-block { margin-bottom: 1.1rem; }
+  .result-block:last-child { margin-bottom: 0; }
+  .result-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: .35rem;
+  }
+
+  pre {
+    background: #0f1117;
+    color: #d8dee9;
+    padding: .9rem 1rem;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    border-radius: 8px;
+    font-size: .78rem;
+    font-family: var(--mono);
+    margin: 0;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  #recaptcha-container { margin: .7rem 0; }
+
+  hr.divider { border: none; border-top: 1px solid var(--border); margin: 1.6rem 0; }
+
+  .result-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .result-header h2 { margin: 0; }
+
+  .input-wrap { position: relative; }
+  .input-wrap input { padding-right: 2.4rem; }
+  .toggle-visibility {
+    position: absolute;
+    right: .3rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    padding: .3rem .5rem;
+    font-size: .95rem;
+    cursor: pointer;
+    color: var(--muted);
+    margin: 0;
+  }
+  .toggle-visibility:hover { color: var(--text); background: none; }
+
+  #log-panel {
+    background: #0f1117;
+    border-radius: 8px;
+    padding: .8rem 1rem;
+    font-family: var(--mono);
+    font-size: .76rem;
+    max-height: 220px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+  }
+  .log-line { display: flex; gap: .7rem; }
+  .log-time { color: #576079; flex-shrink: 0; }
+  .log-line.info .log-msg { color: #9ca3af; }
+  .log-line.start .log-msg { color: #93c5fd; }
+  .log-line.success .log-msg { color: #6ee7b7; }
+  .log-line.error .log-msg { color: #fca5a5; }
+  .log-empty { color: #576079; font-style: italic; }
+</style>
+</head>
+<body>
+
+<span class="badge">⚠ Dev only — do not deploy</span>
+<h1>🔥 Firebase Sign-In Tester</h1>
+<p class="intro">
+  Paste your Firebase web app config (Firebase Console → Project settings → General → Your apps → SDK setup and configuration → Config), then try each sign-in method and inspect exactly what comes back — the raw ID token, its decoded claims (what your backend's <code>verify_id_token()</code> will see), and the full client-side user object.
+</p>
+
+<div class="card">
+  <div class="card-header"><span class="step-num">1</span><h2>Config</h2></div>
+  <div class="field-body">
+    <textarea id="config" rows="7" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","appId":"..."}'></textarea>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="initApp()">Initialize Firebase</button>
+    </div>
+    <span id="init-status" class="status-pill"></span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="step-num">2</span><h2>Email / Password</h2></div>
+  <div class="field-body">
+    <label for="email">Email</label>
+    <input type="email" id="email" placeholder="test@example.com" />
+    <label for="password">Password</label>
+    <div class="input-wrap">
+      <input type="password" id="password" placeholder="min 6 characters" />
+      <button type="button" class="toggle-visibility" id="toggle-password-btn" onclick="togglePassword()">👁</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn-secondary" onclick="emailSignUp()">Sign up</button>
+      <button class="btn-primary" onclick="emailSignIn()">Sign in</button>
+    </div>
+    <hr class="divider" />
+    <p class="card-hint" style="margin-left:0">
+      Firebase does <strong>not</strong> send a verification email automatically on sign-up — it only sends one when you explicitly ask it to. Sign up or sign in above first, then:
+    </p>
+    <div class="btn-row">
+      <button class="btn-secondary" onclick="sendVerification()">Send verification email</button>
+      <button class="btn-secondary" onclick="refreshStatus()">Refresh verification status</button>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="step-num">3</span><h2>Google</h2></div>
+  <div class="field-body">
+    <div class="btn-row">
+      <button class="btn-primary" onclick="googleSignIn()">Sign in with Google (popup)</button>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="step-num">4</span><h2>Phone</h2></div>
+  <p class="card-hint">Tip: use a Firebase test phone number (Console → Authentication → Sign-in method → Phone → Phone numbers for testing) to avoid burning real SMS and to get a fixed OTP.</p>
+  <div class="field-body">
+    <div id="recaptcha-container"></div>
+    <label for="phone">Phone number</label>
+    <input type="tel" id="phone" placeholder="+2507xxxxxxxx" />
+    <div class="btn-row">
+      <button class="btn-secondary" onclick="phoneSendCode()">Send code</button>
+    </div>
+    <label for="otp">Verification code</label>
+    <input type="text" id="otp" placeholder="6-digit code" />
+    <div class="btn-row">
+      <button class="btn-primary" onclick="phoneVerifyCode()">Verify code</button>
+    </div>
+  </div>
+</div>
+
+<hr class="divider" />
+
+<div class="result-header">
+  <h2>Activity Log</h2>
+  <button class="btn-ghost" onclick="clearLog()">Clear</button>
+</div>
+<div id="log-panel"><div class="log-empty">No activity yet — try signing in with any method above.</div></div>
+
+<hr class="divider" />
+
+<div class="result-header"><h2>Result</h2></div>
+<div id="result-status"></div>
+
+<div class="result-block">
+  <div class="result-label">
+    <span>Raw ID token</span>
+    <button class="btn-ghost" onclick="copyText('raw-token')">Copy</button>
+  </div>
+  <pre id="raw-token">(none yet)</pre>
+</div>
+
+<div class="result-block">
+  <div class="result-label"><span>Decoded token claims — what your backend's verify_id_token() returns</span></div>
+  <pre id="decoded-claims">(none yet)</pre>
+</div>
+
+<div class="result-block">
+  <div class="result-label"><span>Client-side user object</span></div>
+  <pre id="user-object">(none yet)</pre>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import {
+    getAuth,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    GoogleAuthProvider,
+    signInWithPopup,
+    RecaptchaVerifier,
+    signInWithPhoneNumber,
+    sendEmailVerification,
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+
+  let app, auth, confirmationResult, currentUser;
+
+  function decodeJwt(token) {
+    const payload = token.split(".")[1];
+    const json = decodeURIComponent(
+      atob(payload.replace(/-/g, "+").replace(/_/g, "/"))
+        .split("")
+        .map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0"))
+        .join("")
+    );
+    return JSON.parse(json);
+  }
+
+  function logEvent(msg, type = "info") {
+    const panel = document.getElementById("log-panel");
+    const empty = panel.querySelector(".log-empty");
+    if (empty) empty.remove();
+    const time = new Date().toLocaleTimeString();
+    const line = document.createElement("div");
+    line.className = "log-line " + type;
+    line.innerHTML = `<span class="log-time">${time}</span><span class="log-msg"></span>`;
+    line.querySelector(".log-msg").textContent = msg;
+    panel.appendChild(line);
+    panel.scrollTop = panel.scrollHeight;
+  }
+
+  window.clearLog = function () {
+    document.getElementById("log-panel").innerHTML =
+      '<div class="log-empty">No activity yet — try signing in with any method above.</div>';
+  };
+
+  window.togglePassword = function () {
+    const input = document.getElementById("password");
+    const btn = document.getElementById("toggle-password-btn");
+    const hidden = input.type === "password";
+    input.type = hidden ? "text" : "password";
+    btn.textContent = hidden ? "🙈" : "👁";
+  };
+
+  function showResult(label, ok, user, token) {
+    logEvent(label, ok ? "success" : "error");
+    const el = document.getElementById("result-status");
+    el.textContent = label;
+    el.className = ok ? "ok" : "err";
+    if (ok && user && token) {
+      currentUser = user;
+      document.getElementById("raw-token").textContent = token;
+      document.getElementById("decoded-claims").textContent = JSON.stringify(decodeJwt(token), null, 2);
+      document.getElementById("user-object").textContent = JSON.stringify(
+        {
+          uid: user.uid,
+          email: user.email,
+          emailVerified: user.emailVerified,
+          phoneNumber: user.phoneNumber,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+          providerData: user.providerData,
+          metadata: user.metadata,
+        },
+        null,
+        2
+      );
+    }
+  }
+
+  function showError(err) {
+    logEvent("Error: " + err.message, "error");
+    const el = document.getElementById("result-status");
+    el.textContent = "Error: " + err.message;
+    el.className = "err";
+  }
+
+  window.copyText = function (id) {
+    const text = document.getElementById(id).textContent;
+    navigator.clipboard.writeText(text).catch(() => {});
+  };
+
+  window.initApp = function () {
+    logEvent("Initializing Firebase...", "start");
+    const pill = document.getElementById("init-status");
+    try {
+      const cfg = JSON.parse(document.getElementById("config").value);
+      app = initializeApp(cfg);
+      auth = getAuth(app);
+      pill.textContent = "Initialized ✓";
+      pill.className = "status-pill show ok";
+      logEvent("Firebase initialized", "success");
+    } catch (e) {
+      pill.textContent = "Error: " + e.message;
+      pill.className = "status-pill show err";
+      logEvent("Error: " + e.message, "error");
+    }
+  };
+
+  window.emailSignUp = async function () {
+    logEvent("Email sign-up started...", "start");
+    try {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const token = await cred.user.getIdToken();
+      showResult("Email sign-up OK", true, cred.user, token);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  window.emailSignIn = async function () {
+    logEvent("Email sign-in started...", "start");
+    try {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      const token = await cred.user.getIdToken();
+      showResult("Email sign-in OK", true, cred.user, token);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  window.sendVerification = async function () {
+    logEvent("Sending verification email...", "start");
+    const el = document.getElementById("result-status");
+    if (!currentUser) {
+      logEvent("Error: sign up or sign in first", "error");
+      el.textContent = "Error: sign up or sign in first";
+      el.className = "err";
+      return;
+    }
+    try {
+      await sendEmailVerification(currentUser);
+      el.textContent = "Verification email sent to " + currentUser.email + " — check your inbox";
+      el.className = "ok";
+      logEvent("Verification email sent to " + currentUser.email, "success");
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  window.refreshStatus = async function () {
+    logEvent("Refreshing verification status...", "start");
+    const el = document.getElementById("result-status");
+    if (!currentUser) {
+      logEvent("Error: sign up or sign in first", "error");
+      el.textContent = "Error: sign up or sign in first";
+      el.className = "err";
+      return;
+    }
+    try {
+      await currentUser.reload();
+      const token = await currentUser.getIdToken(true);
+      showResult(
+        currentUser.emailVerified ? "Refreshed — email is now verified ✓" : "Refreshed — still not verified yet",
+        true,
+        currentUser,
+        token
+      );
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  window.googleSignIn = async function () {
+    logEvent("Opening Google sign-in popup...", "start");
+    try {
+      const provider = new GoogleAuthProvider();
+      const cred = await signInWithPopup(auth, provider);
+      const token = await cred.user.getIdToken();
+      showResult("Google sign-in OK", true, cred.user, token);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  window.phoneSendCode = async function () {
+    logEvent("Sending phone verification code...", "start");
+    try {
+      if (!window.recaptchaVerifier) {
+        window.recaptchaVerifier = new RecaptchaVerifier(auth, "recaptcha-container", { size: "normal" });
+      }
+      const phone = document.getElementById("phone").value;
+      confirmationResult = await signInWithPhoneNumber(auth, phone, window.recaptchaVerifier);
+      const el = document.getElementById("result-status");
+      el.textContent = "Code sent, enter OTP below";
+      el.className = "ok";
+      logEvent("Code sent to " + phone, "success");
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  window.phoneVerifyCode = async function () {
+    logEvent("Verifying phone code...", "start");
+    try {
+      const otp = document.getElementById("otp").value;
+      const cred = await confirmationResult.confirm(otp);
+      const token = await cred.user.getIdToken();
+      showResult("Phone sign-in OK", true, cred.user, token);
+    } catch (e) {
+      showError(e);
+    }
+  };
+</script>
+
+</body>
+</html>
