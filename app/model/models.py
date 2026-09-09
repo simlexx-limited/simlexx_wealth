@@ -44,6 +44,7 @@ class Users(Base):
     phone_number:Mapped[String] = mapped_column(String, nullable=False, unique=True)
     password:Mapped[String] = mapped_column(String, nullable=True)
     auth_provider:Mapped[AuthProvider] = mapped_column(Enum(AuthProvider), nullable=False)
+    firebase_uid:Mapped[String] = mapped_column(String, unique=True, nullable=True)
     status:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
     role:Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
     profile_verification_complete:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
