@@ -8,6 +8,7 @@ from app.model.mod_enum import (
     AuthProvider,
     UserRole,
     UserAccountStatus,
+    AccountStatus,
     NotificationChannel,
     TransactionType,
     TransactionStatus,
@@ -45,7 +46,7 @@ class Users(Base):
     password:Mapped[String] = mapped_column(String, nullable=True)
     auth_provider:Mapped[AuthProvider] = mapped_column(Enum(AuthProvider), nullable=False)
     firebase_uid:Mapped[String] = mapped_column(String, unique=True, nullable=True)
-    status:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
+    status:Mapped[AccountStatus] = mapped_column(Enum(AccountStatus), nullable=False, default=AccountStatus.ACTIVE)
     role:Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
     profile_verification_complete:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
     last_login_at:Mapped[datetime] = mapped_column(
