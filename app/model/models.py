@@ -6,6 +6,7 @@ from app.model.base import Base
 from app.model.generator import id_generator
 from app.model.mod_enum import (
     AuthProvider,
+    UserRole,
     UserAccountStatus,
     NotificationChannel,
     TransactionType,
@@ -13,7 +14,8 @@ from app.model.mod_enum import (
     GoalStatus,
     ProductType,
     MultifactorAuth,
-    NotificationStatus
+    NotificationStatus,
+    CurrencyType
     )
 from sqlalchemy import (
     Float,
@@ -31,6 +33,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY
 
 
+# ============================================================
+# Shared across every role (client, agent, broker, fund manager)
+# ============================================================
+
 class Users(Base):
     __tablename__ = "Users"
     id:Mapped[String] = mapped_column(String, primary_key=True, unique=True, default=id_generator)
@@ -39,6 +45,7 @@ class Users(Base):
     password:Mapped[String] = mapped_column(String, nullable=True)
     auth_provider:Mapped[AuthProvider] = mapped_column(Enum(AuthProvider), nullable=False)
     status:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
+    role:Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
     profile_verification_complete:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
     last_login_at:Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -49,7 +56,7 @@ class Users(Base):
     updated_at: Mapped[datetime] = mapped_column(
             DateTime(timezone=True), server_default=func.now()
         )
-    more_about_user:Mapped["MoreAboutUsers"] = relationship("MoreAboutUsers", back_populates="user", uselist=False)
+    more_about_user:Mapped["MoreAboutUsers"] = relationship("MoreAboutUsers", foreign_keys="[MoreAboutUsers.user_id]", back_populates="user", uselist=False)
     user_account:Mapped["UserAccount"] = relationship("UserAccount", back_populates="user", uselist=False)
     transactions:Mapped[list["Transaction"]] = relationship("Transaction", back_populates="user")
     goals:Mapped[list["UserGoals"]] = relationship("UserGoals", back_populates="user")
@@ -57,6 +64,7 @@ class Users(Base):
     system_logs:Mapped[list["SystemLogs"]] = relationship("SystemLogs", back_populates="user")
     mfa:Mapped["UserAuthMFA"] = relationship("UserAuthMFA", back_populates="user", uselist=False)
     otp_verifications:Mapped[list["OtpVerification"]] = relationship("OtpVerification", back_populates="user")
+    reviewed_profiles:Mapped[list["MoreAboutUsers"]] = relationship("MoreAboutUsers", foreign_keys="[MoreAboutUsers.reviewer_id]", back_populates="reviewer")
 
 class UserAuthMFA(Base):
     __tablename__ = "AuthMFAMethod"
@@ -80,6 +88,12 @@ class OtpVerification(Base):
     created_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     user:Mapped["Users"] = relationship("Users", back_populates="otp_verifications")
 
+# ============================================================
+# Client-only: KYC profile, linked bank account, goals, transactions,
+# and notifications. Agent/broker users don't have rows here for
+# themselves — they show up as the reviewer on a client's MoreAboutUsers.
+# ============================================================
+
 class MoreAboutUsers(Base):
     __tablename__ = "MoreAboutUsers"
 
@@ -100,13 +114,14 @@ class MoreAboutUsers(Base):
     document_expiry_date:Mapped[Date] = mapped_column(Date, nullable=False)
     profile_picture:Mapped[String] = mapped_column(String, nullable=False)
     profile_verification_complete:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
-    reviewed_at: Mapped[datetime] = mapped_column(
-                    DateTime(timezone=True), server_default=func.now()
-                    )
+    reviewer_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), nullable=True)
+    reviewed_by:Mapped[String] = mapped_column(String, nullable=True)  # name of the reviewer or organization
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
                 DateTime(timezone=True), server_default=func.now()
                 )
-    user:Mapped["Users"] = relationship("Users", back_populates="more_about_user")
+    user:Mapped["Users"] = relationship("Users", foreign_keys=[user_id], back_populates="more_about_user")
+    reviewer:Mapped["Users"] = relationship("Users", foreign_keys=[reviewer_id], back_populates="reviewed_profiles")
 
 
 class UserAccount(Base):
@@ -115,7 +130,8 @@ class UserAccount(Base):
     user_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), unique=True, nullable=False)
     bank_name:Mapped[String] = mapped_column(String, nullable=False)
     account_number:Mapped[String] = mapped_column(String, nullable=False)
-    balance:Mapped[Numeric] = mapped_column(Numeric, nullable=False, default=0)
+    balance:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=False, default=0)
+    currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)
     account_document_id:Mapped[String] = mapped_column(String, nullable=True)
     account_document:Mapped[String] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -132,8 +148,9 @@ class UserGoals(Base):
     id:Mapped[String] = mapped_column(String, primary_key=True, unique=True, default=id_generator)
     user_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), nullable=False)
     product_id:Mapped[String] = mapped_column(ForeignKey("products.id"), nullable=True)
-    target_amount:Mapped[Numeric] = mapped_column(Numeric, nullable=False)
-    current_amount:Mapped[Numeric] = mapped_column(Numeric, nullable=False, default=0)
+    target_amount:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=False)
+    current_amount:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=False, default=0)
+    currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)
     target_date:Mapped[Date] = mapped_column(Date, nullable=False)
     purpose:Mapped[Text] = mapped_column(Text, nullable=False)
     goal_status:Mapped[GoalStatus] = mapped_column(Enum(GoalStatus), nullable=False, default=GoalStatus.ONGOING)
@@ -154,7 +171,9 @@ class Transaction(Base):
     account_id:Mapped[String] = mapped_column(ForeignKey("UserAccount.id"), nullable=False)
     goal_id:Mapped[String] = mapped_column(ForeignKey("UserGoals.id"), nullable=True)
     type:Mapped[TransactionType] = mapped_column(Enum(TransactionType), nullable=False)
-    amount:Mapped[Numeric] = mapped_column(Numeric, nullable=False)
+    amount:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=False)
+    currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)
+    fx_rate_to_base:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=True)  # rate from `currency` to the platform's base currency, captured at transaction time
     status:Mapped[TransactionStatus] = mapped_column(Enum(TransactionStatus), nullable=False, default=TransactionStatus.PENDING)
     bank_reference:Mapped[String] = mapped_column(String, nullable=True)  # reference from the transaction made directly via the bank api
     unit_master_reference:Mapped[String] = mapped_column(String, nullable=True)
@@ -183,6 +202,10 @@ class Notifications(Base):
                     )
     user:Mapped["Users"] = relationship("Users", back_populates="notifications")
 
+# ============================================================
+# Cross-cutting (not tied to a single role)
+# ============================================================
+
 class Products(Base):
     __tablename__ = "products"
     id:Mapped[String] = mapped_column(String, primary_key=True, unique=True, default=id_generator)
@@ -190,7 +213,8 @@ class Products(Base):
     product_name:Mapped[String] = mapped_column(String, nullable=False)
     product_type:Mapped[ProductType] = mapped_column(Enum(ProductType), nullable=False)
     description:Mapped[Text] = mapped_column(Text, nullable=False)
-    minimum_investment:Mapped[Numeric] = mapped_column(Numeric, nullable=True)
+    minimum_investment:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=True)
+    currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)
     is_active:Mapped[Boolean] = mapped_column(Boolean, nullable=False, default=True)
     document_id:Mapped[String] = mapped_column(String, nullable=False)
     document_link:Mapped[String] = mapped_column(String, nullable=False)
