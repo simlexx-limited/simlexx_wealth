@@ -1,4 +1,42 @@
-fastapi[standard]
-pydantic[standard]
+# --- Web framework & server ---
+fastapi
 uvicorn[standard]
+
+# --- Data validation / settings ---
+pydantic
+pydantic-settings
+
+# --- Database & ORM (async, since FastAPI is async-first) ---
+sqlalchemy[asyncio]
+asyncpg
+alembic
+
+# --- Auth (pick based on which provider you land on) ---
+firebase-admin
+# clerk-backend-api
+clerk-backend-api
+python-jose[cryptography]
+
+# --- File storage (S3 and Cloudflare R2 both speak the S3 API) ---
+boto3
+
+# --- Notifications ---
+aiosmtplib
+twilio
+
+# --- Outbound calls to Unit Master / custodian bank adapters ---
+httpx
+tenacity
+
+# --- File uploads (ID documents in the Verification service) ---
+python-multipart
+
+# --- Environment ---
 python-dotenv
+
+# agent development kit
+google-adk
+
+# background & caching
+celery
+redis

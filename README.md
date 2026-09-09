@@ -28,43 +28,103 @@ providers, while embedding affordable microinsurance into that same journey.
 ## Tech stack
 
 - **[FastAPI](https://fastapi.tiangolo.com/)** — web framework
+- **[SQLAlchemy](https://www.sqlalchemy.org/)** (async) + **asyncpg** — ORM / database driver
+- **[Alembic](https://alembic.sqlalchemy.org/)** — database migrations
 - **[Pydantic](https://docs.pydantic.dev/)** — data validation and settings
 - **[Uvicorn](https://www.uvicorn.org/)** — ASGI server
-- **python-dotenv** — environment variable management
-- **Docker** — containerized deployment (`DOCKERFILE`, `docker-compose.yml`)
+- **PostgreSQL** — primary database
+- **Redis** — cache, plus Celery broker/result backend
+- **[Celery](https://docs.celeryq.dev/)** — background jobs
+- **Docker / Docker Compose** — local development and containerized deployment
 
 ## Project structure
 
 ```
 app/
-├── agent/      # Agent-related logic
-├── config/     # App configuration and environment settings
-├── data/       # Data access layer
-├── model/      # Domain / database models
-├── routers/    # API route definitions
+├── config/     # Settings (pydantic-settings) and env config
+├── database/   # Async SQLAlchemy engine/session
+├── middleware/ # CORS, etc.
+├── model/      # SQLAlchemy models, enums, id generator
+├── queue/      # Redis client and Celery app
+├── routers/    # API routers (e.g. health_router.py)
 ├── schema/     # Pydantic request/response schemas
 ├── services/   # Business logic
-└── .env.example
+├── main.py     # FastAPI app instance, wires everything together
+├── routing.py  # Registers every router onto the app
+└── startup.py  # Logging, migrations, lifespan, connectivity checks
+
+alembic/        # Database migrations
+docs/           # ER diagram, architecture diagram, database design doc
 ```
 
-This project is in early scaffolding — modules are stubbed out and will be
-filled in as functionality is built.
+See [docs/Simlexx_Wealth_Database_Design.docx](docs/Simlexx_Wealth_Database_Design.docx)
+for the full database schema and system architecture write-up, including the
+diagrams below.
 
-## Getting started
+| ER diagram | Architecture |
+|---|---|
+| [docs/er_diagram.png](docs/er_diagram.png) | [docs/architecture_diagram.png](docs/architecture_diagram.png) |
 
-Install dependencies:
+## Running the app
+
+The whole stack (API, worker, Postgres, Redis) runs via Docker Compose — this
+is the recommended way to run it locally.
+
+**1. Set up your environment file:**
 
 ```bash
-pip install -r requirements.txt
+cp .env.example .env
 ```
 
-Copy the example environment file and fill in the required values:
+Fill in the values in `.env` (database credentials, Redis, any third-party
+API keys you're using). See [.env.example](.env.example) for the full list.
+
+**2. Build and start everything:**
 
 ```bash
-cp app/.env.example app/.env
+docker compose up --build
+```
+
+This builds the `api` and `worker` images, starts `postgres` and `redis`,
+waits for both to report healthy, then starts the API and the Celery worker.
+On startup the API automatically runs `alembic upgrade head` against the
+database — no manual migration step needed.
+
+**3. Confirm it's up:**
+
+```bash
+curl http://localhost:8000/health
+```
+
+You should get back something like:
+
+```json
+{"status": "running", "components": {"database": "healthy", "cache": "healthy", "background": "healthy"}}
+```
+
+The API is now reachable at `http://localhost:8000`.
+
+**Useful commands:**
+
+```bash
+docker compose logs -f api          # follow API logs
+docker compose logs -f              # follow all services
+docker compose down                 # stop and remove containers (keeps data)
+docker compose up -d                # start in the background
+```
+
+**Running without Docker** (e.g. for quicker local iteration against
+Docker-hosted Postgres/Redis): install dependencies, then run Uvicorn and
+apply migrations yourself:
+
+```bash
+pip install -r requirements-dev.txt
+alembic upgrade head
+uvicorn app.main:app --reload
 ```
 
 ## Requirements files
 
-- `requirements.txt` — development dependencies
-- `requirements-prod.txt` — production dependencies
+- `requirements.txt` — runtime dependencies
+- `requirements-dev.txt` — runtime + dev tooling (pytest, mypy, etc.)
+- `requirements-prod.txt` — production-only additions (currently empty)
