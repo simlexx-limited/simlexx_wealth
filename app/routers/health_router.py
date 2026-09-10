@@ -7,6 +7,7 @@ from sqlalchemy import text
 from app.database.database import engine
 from app.queue.redis import redis_client
 from app.startup import check_celery_broker
+from app.services.firebase_auth.setup import check_firebase
 
 logger = logging.getLogger("simlexx")
 
@@ -44,6 +45,13 @@ async def health() -> dict:
     except Exception as exc:
         logger.error("Background health check failed: %s", exc)
         components["background"] = "failed"
+
+    try:
+        await asyncio.to_thread(check_firebase)
+        components["firebase"] = "healthy"
+    except Exception as exc:
+        logger.error("Firebase health check failed: %s", exc)
+        components["firebase"] = "failed"
 
     overall = "running" if all(value == "healthy" for value in components.values()) else "failed"
     return {"status": overall, "components": components}

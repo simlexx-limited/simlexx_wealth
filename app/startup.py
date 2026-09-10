@@ -11,12 +11,14 @@ from sqlalchemy import text
 from app.database.database import engine
 from app.queue.celery_app import celery_app
 from app.queue.redis import redis_client
+from app.services.firebase_auth.setup import init_firebase
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("simlexx")
+logger.setLevel(logging.INFO)
 
 ALEMBIC_INI_PATH = Path(__file__).resolve().parent.parent / "alembic.ini"
 
@@ -50,6 +52,14 @@ async def lifespan(app: FastAPI):
     logger.info("Connecting to Redis...")
     await redis_client.ping()
     logger.info("Connected to Redis.")
+
+    logger.info("Starting Firebase...")
+    try:
+        init_firebase()
+        logger.info("Firebase started.")
+    except Exception as exc:
+        logger.error("Firebase failed to start: %s", exc)
+        raise
 
     logger.info("Startup complete.")
     yield
