@@ -19,3 +19,9 @@ dist/
 .idea/
 .DS_Store
 push.sh
+
+# Firebase service account credentials (secret, never commit)
+service_account.json
+*firebase*adminsdk*.json
+serviceAccountKey.json
+test_app.json

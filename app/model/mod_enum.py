@@ -21,7 +21,11 @@ class UserAccountStatus(str, PyEnum):
     PENDING = "pending"
     REJECTED = "rejected"
     APPROVED = "approved"
-    DISABLED = "disabled"
+
+class AccountStatus(str, PyEnum):
+    ACTIVE = "Active"
+    DISABLE = "Disable"
+    REACTIVE = "Reactived"
 
 class NotificationChannel(str, PyEnum):
     SMS = "sms"
