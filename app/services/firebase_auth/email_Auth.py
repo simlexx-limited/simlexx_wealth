@@ -1,12 +1,7 @@
 import sqlalchemy
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer
-
-from firebase_admin import auth
-
-from functools import lru_cache
 
 from app.services.firebase_auth.firebase_auth import Auth
 from app.services.firebase_auth.auth_errors import DuplicateAccountError, UnverifiedAccountError
