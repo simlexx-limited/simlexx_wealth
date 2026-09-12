@@ -150,9 +150,6 @@ class TestRegister:
         session = make_fake_session([False, False])  # neither phone nor email exists
 
         async def fake_refresh(user_obj):
-            # simulates what a real commit+refresh against Postgres would
-            # populate: server-side/client-side defaults that only exist
-            # after the row actually round-trips through the database.
             user_obj.id = "fake-generated-id"
             user_obj.status = AccountStatus.ACTIVE
             user_obj.profile_verification_complete = UserAccountStatus.PENDING

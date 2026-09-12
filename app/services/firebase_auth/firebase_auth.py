@@ -60,3 +60,8 @@ class Auth:
         stmnt = select(exists().where(or_(*conditions)))
         result = await self.__db_session.execute(stmnt)
         return bool(result.scalar())
+
+@lru_cache
+def authentication():
+    security = HTTPBearer()
+    return Auth(security=security, session=None)
