@@ -4,27 +4,23 @@ from functools import lru_cache
 
 from fastapi import Depends
 from fastapi.routing import APIRouter
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.database import get_session
 from app.model.mod_enum import AuthProvider
 
-from app.services.firebase_auth.firebase_auth import Auth
+from app.services.firebase_auth.firebase_auth import authentication
 from app.services.firebase_auth.email_Auth import Email_Auth
 
 from app.schema.email_auth_schema import EmailSignINSchema, User_signup_schema
 
 
 router = APIRouter(
-    prefix="/api/v1/email_auth",
+    prefix="/api/v1/auth/email_auth",
     tags=["Email-Password Authentication router"]
 )
-
-@lru_cache
-def authentication():
-    return Auth(security=HTTPBearer(), session=None)
 
 @router.post("/register")
 async def create_account(
