@@ -16,7 +16,8 @@ from app.model.mod_enum import (
     ProductType,
     MultifactorAuth,
     NotificationStatus,
-    CurrencyType
+    CurrencyType,
+    OtpPurpose
     )
 from sqlalchemy import (
     Float,
@@ -49,6 +50,8 @@ class Users(Base):
     status:Mapped[AccountStatus] = mapped_column(Enum(AccountStatus), nullable=False, default=AccountStatus.ACTIVE)
     role:Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
     profile_verification_complete:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
+    phone_number_verified:Mapped[Boolean] = mapped_column(Boolean, nullable=False, default=False)
+    email_verified:Mapped[Boolean] = mapped_column(Boolean, nullable=False, default=False)
     last_login_at:Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -84,6 +87,7 @@ class OtpVerification(Base):
     user_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), nullable=False)
     channel:Mapped[NotificationChannel] = mapped_column(Enum(NotificationChannel), nullable=False)
     code:Mapped[String] = mapped_column(String, nullable=False)
+    purpose:Mapped[OtpPurpose] = mapped_column(Enum(OtpPurpose), nullable=False)
     expires_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     verified_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     attempts:Mapped[Integer] = mapped_column(Integer, nullable=False, default=0)
