@@ -6,8 +6,15 @@ import pytest
 from fastapi.security import HTTPBearer
 from sqlalchemy.exc import IntegrityError
 
-from app.model.mod_enum import AccountStatus, AuthProvider, UserAccountStatus, UserRole
-from app.routers.google_signin_router import register as google_register
+from app.model.mod_enum import (
+    AccountStatus,
+    AuthProvider,
+    NotificationChannel,
+    OtpPurpose,
+    UserAccountStatus,
+    UserRole,
+)
+from app.routers.auth.google_signin_router import register as google_register
 from app.schema.email_auth_schema import EmailSignINSchema, User_signup_schema
 from app.services.firebase_auth.auth_errors import DuplicateAccountError, UnverifiedAccountError
 from app.services.firebase_auth.google_auth import Google_Auth
@@ -163,8 +170,10 @@ class TestGoogleAuthRegister:
         assert data.status == AccountStatus.ACTIVE
         assert data.profile_verification_complete == UserAccountStatus.PENDING
 
-        session.add.assert_called_once()
-        session.commit.assert_awaited_once()
+        # Users row + the OtpManagementService/SystemLogService audit records
+        # created after registration succeeds.
+        assert session.add.call_count == 3
+        assert session.commit.await_count == 3
 
     @pytest.mark.asyncio
     async def test_stores_google_auth_provider_not_password(self):
@@ -176,8 +185,38 @@ class TestGoogleAuthRegister:
 
         await service.register(new_user=make_signup_schema(), email_sigin=make_google_signin_schema())
 
-        created_user = session.add.call_args[0][0]
+        created_user = session.add.call_args_list[0][0][0]
         assert created_user.auth_provider == AuthProvider.FIREBASE_GOOGLE
+
+    @pytest.mark.asyncio
+    async def test_creates_verified_otp_audit_and_system_log_records(self):
+        """Firebase already verifies the email before this call, so the
+        OTP row created here should record that fact immediately rather
+        than represent a pending, unverified code."""
+        session = make_fake_session([False, False])
+        session.refresh = AsyncMock(side_effect=fake_refresh_factory())
+        service = Google_Auth(security=HTTPBearer(), session=session)
+
+        await service.register(
+            new_user=make_signup_schema(phone_number="+250250123458"),
+            email_sigin=make_google_signin_schema(email="audit.check@example.com"),
+        )
+
+        added = [call.args[0] for call in session.add.call_args_list]
+        assert len(added) == 3
+
+        otp_record = added[1]
+        assert otp_record.channel == NotificationChannel.EMAIL
+        assert otp_record.purpose == OtpPurpose.EMAIL_VERIFICATION
+        assert otp_record.code == "FIREBASE_VERIFIED"
+        assert otp_record.verified_at is not None
+        assert otp_record.expires_at == otp_record.verified_at
+
+        log_record = added[2]
+        assert log_record.action == "register"
+        assert log_record.entity == "Users"
+        assert log_record.entity_id == "fake-generated-id"
+        assert "google" in log_record.description.lower()
 
 
 # ---------------------------------------------------------------------------
