@@ -16,9 +16,9 @@ from app.model.mod_enum import (
     UserRole,
 )
 from app.schema.email_auth_schema import EmailSignINSchema, User_signup_schema
-from app.services.firebase_auth.auth_errors import DuplicateAccountError, UnverifiedAccountError
-from app.services.firebase_auth.email_Auth import Email_Auth
-from app.services.firebase_auth.firebase_auth import Auth
+from app.services.auth.firebase_auth.auth_errors import DuplicateAccountError, UnverifiedAccountError
+from app.services.auth.firebase_auth.email_Auth import Email_Auth
+from app.services.auth.firebase_auth.firebase_auth import Auth
 
 
 def make_signup_schema(**overrides: Any) -> User_signup_schema:
@@ -68,7 +68,7 @@ class TestVerifyCredentials:
 
         decoded = {"uid": "abc123", "email": "test@example.com", "email_verified": True}
         with patch(
-            "app.services.firebase_auth.firebase_auth.auth.verify_id_token",
+            "app.services.auth.firebase_auth.firebase_auth.auth.verify_id_token",
             return_value=decoded,
         ) as mock_verify:
             result = await auth_service.verify_credentials(credentials=fake_credentials)
@@ -83,7 +83,7 @@ class TestVerifyCredentials:
         fake_credentials.credentials = "a-bad-token"
 
         with patch(
-            "app.services.firebase_auth.firebase_auth.auth.verify_id_token",
+            "app.services.auth.firebase_auth.firebase_auth.auth.verify_id_token",
             side_effect=Exception("Firebase rejected this token"),
         ):
             with pytest.raises(HTTPException) as exc_info:

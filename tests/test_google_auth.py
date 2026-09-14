@@ -16,8 +16,8 @@ from app.model.mod_enum import (
 )
 from app.routers.auth.google_signin_router import register as google_register
 from app.schema.email_auth_schema import EmailSignINSchema, User_signup_schema
-from app.services.firebase_auth.auth_errors import DuplicateAccountError, UnverifiedAccountError
-from app.services.firebase_auth.google_auth import Google_Auth
+from app.services.auth.firebase_auth.auth_errors import DuplicateAccountError, UnverifiedAccountError
+from app.services.auth.firebase_auth.google_auth import Google_Auth
 
 
 def make_signup_schema(**overrides: Any) -> User_signup_schema:

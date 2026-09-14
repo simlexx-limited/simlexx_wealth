@@ -14,10 +14,10 @@ from app.model.mod_enum import (
     UserRole,
 )
 from app.schema.phone_auth_schema import PhoneNumberSignup
-from app.services.firebase_auth.auth_errors import DuplicateAccountError, UnmatchedPassword
-from app.services.phone.phone_auth import PhoneAuthentication
+from app.services.auth.firebase_auth.auth_errors import DuplicateAccountError, UnmatchedPassword
+from app.services.auth.phone.phone_auth import PhoneAuthentication
 
-PATCH_TARGET = "app.services.phone.phone_auth"
+PATCH_TARGET = "app.services.auth.phone.phone_auth"
 
 
 def make_signup_schema(**overrides: Any) -> PhoneNumberSignup:
@@ -111,7 +111,13 @@ class TestPhoneAuthRegister:
     @pytest.mark.asyncio
     async def test_integrity_error_on_commit_raises_duplicate_account_error(self):
         session = make_fake_session([False, False])
-        session.commit = AsyncMock(side_effect=IntegrityError("INSERT", {}, Exception("unique violation")))
+        # Only the registration insert should fail - after the rollback, the
+        # session is usable again (as it would be against real Postgres),
+        # including for the failure-path system-log entry register() now
+        # writes via log_attempt().
+        session.commit = AsyncMock(
+            side_effect=[IntegrityError("INSERT", {}, Exception("unique violation")), None]
+            )
         service = PhoneAuthentication(security=HTTPBearer(), session=session)
 
         with pytest.raises(DuplicateAccountError):
