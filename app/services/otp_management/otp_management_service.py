@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select
@@ -34,6 +34,40 @@ class OtpManagementService:
             expires_at=expires_at,
             verified_at=verified_at,
         )
+        self.session.add(otp)
+        await self.session.commit()
+        await self.session.refresh(otp)
+        return otp
+
+    async def get_latest_unverified_otp(
+        self, user_id: str, purpose: OtpPurpose
+        ) -> Optional[OtpVerification]:
+        """
+        Fetches the most recent not-yet-verified OTP record for a user and
+        purpose - the row that corresponds to whatever code is currently
+        live in Redis for that identifier/purpose.
+        """
+        statement = (
+            select(OtpVerification)
+            .where(
+                OtpVerification.user_id == user_id,
+                OtpVerification.purpose == purpose,
+                OtpVerification.verified_at.is_(None),
+            )
+            .order_by(OtpVerification.created_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
+
+    async def record_attempt(self, otp: OtpVerification, verified: bool = False) -> OtpVerification:
+        """
+        Increments the attempt counter on an OTP record, and marks it
+        verified (with a timestamp) if this attempt was the successful one.
+        """
+        otp.attempts += 1
+        if verified:
+            otp.verified_at = datetime.now(timezone.utc)
         self.session.add(otp)
         await self.session.commit()
         await self.session.refresh(otp)
