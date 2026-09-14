@@ -18,6 +18,7 @@ class SystemLogService:
         entity_id: Optional[str] = None,
         description: Optional[str] = None,
         ip_address: Optional[str] = None,
+        endpoint: Optional[str] = None,
     ) -> SystemLogs:
         """
         Saves a new system log entry to the database.
@@ -29,6 +30,7 @@ class SystemLogService:
             entity_id=entity_id,
             description=description,
             ip_address=ip_address,
+            endpoint=endpoint,
         )
         self.session.add(log)
         await self.session.commit()

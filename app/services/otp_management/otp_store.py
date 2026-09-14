@@ -1,3 +1,5 @@
+from typing import cast
+
 from app.config.setting import get_settings
 from app.model.mod_enum import OtpPurpose
 from app.queue.redis import redis_client
@@ -12,6 +14,23 @@ async def save_otp_code(identifier: str, purpose: OtpPurpose, code: str) -> None
     key = f"otp:{purpose.value}:{identifier}"
     await redis_client.set(key, code, ex=settings.OTP_TTL_SECONDS)
 
+async def get_otp_code(identifier: str, purpose: OtpPurpose) -> str | None:
+    """
+    Retrieve saved otp
+    """
+    key = f"otp:{purpose.value}:{identifier}"
+    # redis_client is constructed with decode_responses=True, so this is
+    # always a str at runtime - the redis-py stubs don't know that flag was
+    # set and report a broader bytes|str|None return type.
+    return cast("str | None", await redis_client.get(key))
+
+async def delete_otp_code(identifier: str, purpose: OtpPurpose) -> None:
+    """
+    Deletes a saved OTP code - e.g. once it's been successfully used, so it
+    can't be replayed a second time.
+    """
+    key = f"otp:{purpose.value}:{identifier}"
+    await redis_client.delete(key)
 
 def format_ttl_duration(seconds: int) -> str:
     """
