@@ -52,6 +52,25 @@ class Settings(BaseSettings):
     PATH_TO_FIREBASE:str
     FIREBASE_WEB_API:str
 
+    # SMTP (email service)
+    SMTP_HOST:str
+    SMTP_PORT:int = 587
+    SMTP_USERNAME:str
+    SMTP_PASSWORD:str
+    SMTP_USE_TLS:bool = True
+    SMTP_FROM_EMAIL:str
+
+    # JWT token
+    SECRET_ACCESS_KEY:str
+    ALGORITHM:str
+    JWT_EXPIRE_MINUTES:int = 60
+
+    # OTP
+    OTP_TTL_SECONDS:int = 86400
+
+    # Rate limiting
+    OTP_ATTEMPT_LIMIT:int = 5
+    OTP_ATTEMPT_WINDOW_SECONDS:int = 3600
 
     @field_validator("R2_JURISDICTION")
     @classmethod

@@ -33,6 +33,13 @@ class AccountNotFoundError(AuthError):
     status_code = 404
     detail = "Account not found"
 
+class UnmatchedPassword(AuthError):
+    status_code = 400
+    detail = "Password did not match"
+
+class PasswordReuseError(AuthError):
+    status_code = 400
+    detail = "New password must be different from your current password. Use a different password or log in instead"
 
 class AccountDisabledError(AuthError):
     status_code = 403
@@ -44,9 +51,5 @@ class UnverifiedAccountError(AuthError):
     detail = "Account not verified"
 
 async def auth_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    # Starlette's exception-handler type is contravariant in `exc` (it must
-    # accept any Exception to be a valid handler), even though it's only
-    # ever actually invoked with AuthError here, per the registration in
-    # app/routing.py: app.add_exception_handler(AuthError, auth_error_handler).
     assert isinstance(exc, AuthError)
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})

@@ -11,7 +11,7 @@ from sqlalchemy import text
 from app.database.database import engine
 from app.queue.celery_app import celery_app
 from app.queue.redis import redis_client
-from app.services.firebase_auth.setup import init_firebase
+from app.services.auth.firebase_auth.setup import init_firebase
 
 logging.basicConfig(
     level=logging.INFO,

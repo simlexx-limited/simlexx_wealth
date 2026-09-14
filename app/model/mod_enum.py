@@ -27,6 +27,13 @@ class AccountStatus(str, PyEnum):
     DISABLE = "Disable"
     REACTIVE = "Reactived"
 
+class OtpPurpose(str, PyEnum):
+    PHONE_VERIFICATION = "phone_verification"
+    EMAIL_VERIFICATION = "email_verification"
+    FORGOT_PASSWORD = "forgot_password"
+    MFA = "mfa"
+    EDIT_SENSITIVE_INFO = "edit_sensitive_info"
+
 class NotificationChannel(str, PyEnum):
     SMS = "sms"
     WHATSAPP = "whatsapp"

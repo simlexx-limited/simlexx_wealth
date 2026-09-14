@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.model.base import Base
@@ -16,7 +16,8 @@ from app.model.mod_enum import (
     ProductType,
     MultifactorAuth,
     NotificationStatus,
-    CurrencyType
+    CurrencyType,
+    OtpPurpose
     )
 from sqlalchemy import (
     Float,
@@ -43,12 +44,14 @@ class Users(Base):
     id:Mapped[String] = mapped_column(String, primary_key=True, unique=True, default=id_generator)
     email_address:Mapped[String] = mapped_column(String, unique=True, nullable=True)
     phone_number:Mapped[String] = mapped_column(String, nullable=False, unique=True)
-    password:Mapped[String] = mapped_column(String, nullable=True)
+    password:Mapped[Optional[str]] = mapped_column(String, nullable=True)
     auth_provider:Mapped[AuthProvider] = mapped_column(Enum(AuthProvider), nullable=False)
     firebase_uid:Mapped[String] = mapped_column(String, unique=True, nullable=True)
     status:Mapped[AccountStatus] = mapped_column(Enum(AccountStatus), nullable=False, default=AccountStatus.ACTIVE)
     role:Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
     profile_verification_complete:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
+    phone_number_verified:Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    email_verified:Mapped[Boolean] = mapped_column(Boolean, nullable=False, default=False)
     last_login_at:Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -84,9 +87,10 @@ class OtpVerification(Base):
     user_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), nullable=False)
     channel:Mapped[NotificationChannel] = mapped_column(Enum(NotificationChannel), nullable=False)
     code:Mapped[String] = mapped_column(String, nullable=False)
+    purpose:Mapped[OtpPurpose] = mapped_column(Enum(OtpPurpose), nullable=False)
     expires_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     verified_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
-    attempts:Mapped[Integer] = mapped_column(Integer, nullable=False, default=0)
+    attempts:Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     user:Mapped["Users"] = relationship("Users", back_populates="otp_verifications")
 
@@ -197,7 +201,7 @@ class Notifications(Base):
     type:Mapped[String] = mapped_column(String, nullable=False)
     content:Mapped[Text] = mapped_column(String, nullable=False)
     status:Mapped[NotificationStatus] = mapped_column(Enum(NotificationStatus), nullable=False, default=NotificationStatus.PENDING)
-    is_read:Mapped[Boolean] = mapped_column(Boolean, nullable=False, default=False)
+    is_read:Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     read_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     sent_at:Mapped[datetime] = mapped_column(
                     DateTime(timezone=True), server_default=func.now()
@@ -233,5 +237,6 @@ class SystemLogs(Base):
     entity_id:Mapped[String] = mapped_column(String, nullable=True)
     description:Mapped[Text] = mapped_column(Text, nullable=True)
     ip_address:Mapped[String] = mapped_column(String, nullable=True)
+    endpoint:Mapped[String] = mapped_column(String, nullable=True)
     created_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     user:Mapped["Users"] = relationship("Users", back_populates="system_logs")

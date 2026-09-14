@@ -44,3 +44,11 @@ redis
 
 # phone number validation
 phonenumbers
+
+# jwt key
+pyjwt
+passlib[bcrypt]
+bcrypt
+
+# rate limiting
+slowapi

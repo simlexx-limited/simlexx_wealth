@@ -7,7 +7,7 @@ from sqlalchemy import text
 from app.database.database import engine
 from app.queue.redis import redis_client
 from app.startup import check_celery_broker
-from app.services.firebase_auth.setup import check_firebase
+from app.services.auth.firebase_auth.setup import check_firebase
 
 logger = logging.getLogger("simlexx")
 

@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.database import get_session
 from app.model.mod_enum import AuthProvider
 
-from app.services.firebase_auth.firebase_auth import authentication
-from app.services.firebase_auth.google_auth import Google_Auth
+from app.services.auth.firebase_auth.firebase_auth import authentication
+from app.services.auth.firebase_auth.google_auth import Google_Auth
 
 from app.schema.email_auth_schema import EmailSignINSchema, User_signup_schema
 
