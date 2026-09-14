@@ -6,8 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.security import HTTPBearer
 
 from app.model.mod_enum import NotificationChannel, OtpPurpose
-from app.services.firebase_auth.firebase_auth import Auth
-from app.services.firebase_auth.auth_errors import DuplicateAccountError, UnverifiedAccountError
+from app.services.auth.firebase_auth.firebase_auth import Auth
+from app.services.auth.firebase_auth.auth_errors import DuplicateAccountError, UnverifiedAccountError
 from app.services.otp_management.otp_management_service import OtpManagementService
 from app.services.logs.system_log_service import SystemLogService
 from app.schema.email_auth_schema import User_signup_schema, EmailSignINSchema, User_signup_response

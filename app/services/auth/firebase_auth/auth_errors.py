@@ -37,6 +37,10 @@ class UnmatchedPassword(AuthError):
     status_code = 400
     detail = "Password did not match"
 
+class PasswordReuseError(AuthError):
+    status_code = 400
+    detail = "New password must be different from your current password. Use a different password or log in instead"
+
 class AccountDisabledError(AuthError):
     status_code = 403
     detail = "This account has been disabled"
