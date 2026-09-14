@@ -63,9 +63,14 @@ class Settings(BaseSettings):
     # JWT token
     SECRET_ACCESS_KEY:str
     ALGORITHM:str
+    JWT_EXPIRE_MINUTES:int = 60
 
     # OTP
     OTP_TTL_SECONDS:int = 86400
+
+    # Rate limiting
+    OTP_ATTEMPT_LIMIT:int = 5
+    OTP_ATTEMPT_WINDOW_SECONDS:int = 3600
 
     @field_validator("R2_JURISDICTION")
     @classmethod

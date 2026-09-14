@@ -49,3 +49,6 @@ phonenumbers
 pyjwt
 passlib[bcrypt]
 bcrypt
+
+# rate limiting
+slowapi
