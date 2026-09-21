@@ -1,9 +1,12 @@
 from functools import lru_cache
 
-from typing import Optional
+from typing import Annotated, Optional
 
+import pycountry
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+from app.model.mod_enum import UserRole
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -72,12 +75,66 @@ class Settings(BaseSettings):
     OTP_ATTEMPT_LIMIT:int = 5
     OTP_ATTEMPT_WINDOW_SECONDS:int = 3600
 
+    # Countries we serve (ISO 3166-1 alpha-2). In .env: SERVED_COUNTRIES=UG,RW
+    SERVED_COUNTRIES:Annotated[list[str], NoDecode] = ["UG"]
+
+    @field_validator("SERVED_COUNTRIES", mode="before")
+    @classmethod
+    def parse_served_countries(cls, value):
+        if isinstance(value, str):
+            value = value.split(",")
+        codes = [c.strip().upper() for c in value if c.strip()]
+        for code in codes:
+            if pycountry.countries.get(alpha_2=code) is None:
+                raise ValueError(f"'{code}' is not a valid ISO country code")
+        return list(dict.fromkeys(codes))
+
+    # Account types anyone may create by signing up themselves. Staff roles
+    # (agent, broker, fund manager) should come from an admin/invite flow, so
+    # by default only clients can self-register. In .env: SELF_REGISTRATION_ROLES=User
+    SELF_REGISTRATION_ROLES:Annotated[list[str], NoDecode] = ["User"]
+
+    @field_validator("SELF_REGISTRATION_ROLES", mode="before")
+    @classmethod
+    def parse_self_registration_roles(cls, value):
+        if isinstance(value, str):
+            value = value.split(",")
+        roles = [r.strip() for r in value if r.strip()]
+        valid = {role.value for role in UserRole}
+        for role in roles:
+            if role not in valid:
+                raise ValueError(f"'{role}' is not a valid role (expected one of {sorted(valid)})")
+        return list(dict.fromkeys(roles))
+
     @field_validator("R2_JURISDICTION")
     @classmethod
     def blank_to_none(cls, value):
         if value == "":
             return None
         return value
+
+    # Names read by app/services/storage/upload_to_cloudflare.py, mapped onto
+    # the R2_* settings above so there is a single source of truth in .env.
+    @property
+    def r2_access_key_id(self) -> str:
+        return self.R2_ACCESS_KEY_ID
+
+    @property
+    def r2_secret_access_key(self) -> str:
+        return self.R2_SECRET_ACCESS_KEY
+
+    @property
+    def r2_bucket_name(self) -> str:
+        return self.R2_BUCKET_NAME
+
+    @property
+    def r2_endpoint_url(self) -> str:
+        jurisdiction = f"{self.R2_JURISDICTION}." if self.R2_JURISDICTION else ""
+        return f"https://{self.R2_ACCOUNT_ID}.{jurisdiction}r2.cloudflarestorage.com"
+
+    @property
+    def r2_public_url_base(self) -> str:
+        return self.BUCKET_URL.rstrip("/")
 
 
 @lru_cache

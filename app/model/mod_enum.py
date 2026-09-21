@@ -65,6 +65,11 @@ class NotificationStatus(str, PyEnum):
     READ = "read"
     NOT_READ = "not_read"
 
+class DocumentType(str, PyEnum):
+    NATIONAL_ID = "national_id"
+    PASSPORT = "passport"
+    DRIVING_PERMIT = "driving_permit"
+
 class CurrencyType(str, PyEnum):
     DZD = "DZD"
     AOA = "AOA"
