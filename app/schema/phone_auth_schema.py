@@ -2,7 +2,7 @@ import re
 import phonenumbers
 from typing import Optional
 from pydantic import BaseModel, field_validator, Field, EmailStr
-from app.model.mod_enum import UserRole
+from app.schema.role import SelfRegistrationRole
 
 def match_pattern():
     return re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).*$")
@@ -15,7 +15,7 @@ class PhoneNumberSignup(BaseModel):
     password:str = Field(description="User password")
     confirm_password:str = Field(description="User confirm password")
     email_address:Optional[EmailStr] = Field(default=None, description="User email address")
-    role:UserRole = Field(description="User provided role")
+    role:SelfRegistrationRole = Field(description="Account type")
 
     @field_validator("password")
     @classmethod
@@ -134,4 +134,3 @@ class ChangePassword(BaseModel):
             raise ValueError("Password must include an uppercase letter, a lowercase letter" \
             "a  number, and a special character")
         return value
-

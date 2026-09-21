@@ -17,7 +17,8 @@ from app.model.mod_enum import (
     MultifactorAuth,
     NotificationStatus,
     CurrencyType,
-    OtpPurpose
+    OtpPurpose,
+    DocumentType
     )
 from sqlalchemy import (
     Float,
@@ -114,14 +115,14 @@ class MoreAboutUsers(Base):
     city_of_residence:Mapped[String] = mapped_column(String, nullable=False)
     full_address:Mapped[String] = mapped_column(String, nullable=False)
     profession:Mapped[String] = mapped_column(String, nullable=False)
-    document_type:Mapped[String] = mapped_column(String, nullable=False)
+    document_type:Mapped[DocumentType] = mapped_column(Enum(DocumentType), nullable=False)
     document_id:Mapped[String] = mapped_column(String, nullable=False)
     document_link:Mapped[String] = mapped_column(String, nullable=False)
     document_expiry_date:Mapped[Date] = mapped_column(Date, nullable=False)
     profile_picture:Mapped[String] = mapped_column(String, nullable=False)
     profile_verification_complete:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
-    reviewer_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), nullable=True)
-    reviewed_by:Mapped[String] = mapped_column(String, nullable=True)  # name of the reviewer or organization
+    reviewer_id:Mapped[Optional[str]] = mapped_column(ForeignKey("Users.id"), nullable=True)
+    reviewed_by:Mapped[Optional[str]] = mapped_column(String, nullable=True)  # name of the reviewer or organization
     reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
                 DateTime(timezone=True), server_default=func.now()
