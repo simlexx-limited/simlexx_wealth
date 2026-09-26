@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, field_validator
 
 from app.model.mod_enum import UserAccountStatus
-from app.schema.more_about_user_schema import MoreAboutUserResponse
+from app.schema.more_about_user_schema import MoreAboutUserSummary
 
 
 class ReviewDecision(BaseModel):
@@ -33,7 +33,7 @@ class ReviewDecision(BaseModel):
 
 
 class ReviewPage(BaseModel):
-    items: list[MoreAboutUserResponse]
+    items: list[MoreAboutUserSummary]
     total: int
     page: int
     limit: int

@@ -8,7 +8,7 @@ from app.model.models import MoreAboutUsers, Users
 from app.schema.more_about_user_schema import (
     MoreAboutUserCreate,
     MoreAboutUserUpdate,
-    UploadedURL,
+    UploadedFile,
 )
 from app.services.auth.firebase_auth.auth_errors import (
     AccountNotFoundError,
@@ -53,12 +53,12 @@ class MoreAboutUserService:
         self,
         user_id: str,
         data: MoreAboutUserCreate,
-        document_link: UploadedURL,
-        profile_picture: UploadedURL,
+        document_file: UploadedFile,
+        picture_file: UploadedFile,
     ) -> MoreAboutUsers:
         """
-        Insert a new MoreAboutUsers row for the given user, with the links of
-        the already-uploaded identity document and profile picture.
+        Insert a new MoreAboutUsers row for the given user, with the object keys
+        of the already-uploaded identity document and profile picture.
 
         Raises the same errors as check_can_create.
         """
@@ -77,9 +77,9 @@ class MoreAboutUserService:
             profession=data.profession,
             document_type=data.document_type,
             document_id=data.document_id,
-            document_link=str(document_link.link),
+            document_key=document_file.key,
             document_expiry_date=data.document_expiry_date,
-            profile_picture=str(profile_picture.link),
+            profile_picture_key=picture_file.key,
         )
         self.session.add(profile)
         await self.session.commit()
@@ -130,8 +130,8 @@ class MoreAboutUserService:
         self,
         user_id: str,
         data: MoreAboutUserUpdate,
-        document_link: Optional[UploadedURL] = None,
-        profile_picture: Optional[UploadedURL] = None,
+        document_file: Optional[UploadedFile] = None,
+        picture_file: Optional[UploadedFile] = None,
     ) -> MoreAboutUsers:
         """
         Partially update the profile that belongs to user_id: the personal
@@ -146,15 +146,15 @@ class MoreAboutUserService:
         Raises the same errors as check_can_update.
         """
         profile = await self.check_can_update(
-            user_id, data, has_files=document_link is not None or profile_picture is not None
+            user_id, data, has_files=document_file is not None or picture_file is not None
         )
 
         for field, value in self._changes(data).items():
             setattr(profile, field, value)
-        if document_link is not None:
-            profile.document_link = str(document_link.link)
-        if profile_picture is not None:
-            profile.profile_picture = str(profile_picture.link)
+        if document_file is not None:
+            profile.document_key = document_file.key
+        if picture_file is not None:
+            profile.profile_picture_key = picture_file.key
 
         await self._reopen_review(profile)
 

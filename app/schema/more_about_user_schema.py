@@ -1,10 +1,11 @@
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, ConfigDict, computed_field, AnyHttpUrl, AnyUrl
+from pydantic import BaseModel, Field, ConfigDict, computed_field, field_validator
 
 from app.model.mod_enum import UserAccountStatus, DocumentType
 from app.schema.country import CountryCode, country_name
+from app.services.storage.signed_urls import is_valid_key, links_expire_at, sign_key
 
 
 class MoreAboutUserCreate(BaseModel):
@@ -50,9 +51,10 @@ class MoreAboutUserUpdate(BaseModel):
     document_expiry_date: Optional[date] = None
 
 
-class MoreAboutUserResponse(BaseModel):
+class MoreAboutUserSummary(BaseModel):
     """
-    Response shape for a MoreAboutUsers record.
+    A profile without any file links: what the review list shows. The links only
+    exist when one profile is opened (see MoreAboutUserResponse).
     """
     model_config = ConfigDict(from_attributes=True)
 
@@ -69,9 +71,7 @@ class MoreAboutUserResponse(BaseModel):
     profession: str
     document_type: DocumentType
     document_id: str
-    document_link: str
     document_expiry_date: date
-    profile_picture: str
     profile_verification_complete: UserAccountStatus
     reviewer_id: Optional[str] = None
     reviewed_by: Optional[str] = None
@@ -89,5 +89,55 @@ class MoreAboutUserResponse(BaseModel):
     def country_of_residence_name(self) -> str:
         return country_name(self.country_of_residence)
 
-class UploadedURL(BaseModel):
-    link:AnyUrl|AnyHttpUrl
+
+class MoreAboutUserResponse(MoreAboutUserSummary):
+    """
+    A full profile. The files are in a private bucket, so document_link and
+    profile_picture are temporary signed links, made fresh each time a response
+    is built and valid until links_expire_at. The stored object keys are
+    never part of a response.
+    """
+    document_key: str = Field(exclude=True)
+    profile_picture_key: str = Field(exclude=True)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def document_link(self) -> str:
+        return sign_key(self.document_key)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def profile_picture(self) -> str:
+        return sign_key(self.profile_picture_key)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def links_expire_at(self) -> datetime:
+        return links_expire_at()
+
+
+class FileLinks(BaseModel):
+    """Just the file links, for refreshing them without reloading a whole profile."""
+    document_link: str
+    profile_picture: str
+    links_expire_at: datetime
+
+    @classmethod
+    def for_keys(cls, document_key: str, profile_picture_key: str) -> "FileLinks":
+        return cls(
+            document_link=sign_key(document_key),
+            profile_picture=sign_key(profile_picture_key),
+            links_expire_at=links_expire_at(),
+        )
+
+
+class UploadedFile(BaseModel):
+    """Where an uploaded file was stored: its object key inside the private bucket."""
+    key: str
+
+    @field_validator("key")
+    @classmethod
+    def key_must_be_one_we_uploaded(cls, value: str) -> str:
+        if not is_valid_key(value):
+            raise ValueError("Not a valid object key")
+        return value
