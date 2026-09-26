@@ -33,7 +33,9 @@ async def upload(
     allowed_extensions: list[str] | None = None,
 ) -> str:
     """
-    Upload any file to Cloudflare R2 and return its public URL.
+    Upload any file to Cloudflare R2 and return its object key (its path inside
+    the bucket). The bucket is private: to open the file, sign the key with
+    app.services.storage.signed_urls.sign_key.
 
     allowed_extensions restricts the accepted file types (e.g. ALLOWED_IMAGE_EXTENSIONS
     for avatars, ALLOWED_DOCUMENT_EXTENSIONS for documents). Pass None to accept any type.
@@ -58,4 +60,4 @@ async def upload(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"File upload failed: {exc}")
 
-    return f"{get_settings().r2_public_url_base}/{key}"
+    return key
