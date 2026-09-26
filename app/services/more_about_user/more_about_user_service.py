@@ -1,20 +1,19 @@
-from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.model.models import MoreAboutUsers
+from app.model.mod_enum import UserAccountStatus
+from app.model.models import MoreAboutUsers, Users
 from app.schema.more_about_user_schema import (
     MoreAboutUserCreate,
-    MoreAboutUserReview,
     MoreAboutUserUpdate,
     UploadedURL,
 )
 from app.services.auth.firebase_auth.auth_errors import (
     AccountNotFoundError,
     DuplicateAccountError,
-    PermissionDeniedError,
+    NothingToUpdateError,
 )
 from app.services.reference.country_service import ensure_country_served
 
@@ -88,19 +87,6 @@ class MoreAboutUserService:
         return profile
 
     # ------------------------------------------------------------------
-    # Read – all
-    # ------------------------------------------------------------------
-
-    async def get_all(self) -> list[MoreAboutUsers]:
-        """Return every MoreAboutUsers row, ordered by update time (newest first)."""
-        statement = (
-            select(MoreAboutUsers)
-            .order_by(MoreAboutUsers.updated_at.desc())
-        )
-        result = await self.session.execute(statement)
-        return list(result.scalars().all())
-
-    # ------------------------------------------------------------------
     # Read – by user_id
     # ------------------------------------------------------------------
 
@@ -119,77 +105,62 @@ class MoreAboutUserService:
     # Update
     # ------------------------------------------------------------------
 
-    async def update(self, user_id: str, data: MoreAboutUserUpdate) -> MoreAboutUsers:
-        """
-        Partially update the profile that belongs to user_id.
-
-        Only fields explicitly set in the request body are written;
-        omitted / None fields are left as-is (model_dump exclude_unset=True).
-
-        Raises AccountNotFoundError when no matching row is found.
-        """
-        profile = await self._get_by_user_id(user_id)
-        if not profile:
-            raise AccountNotFoundError("No profile found for this user.")
-
-        update_data = data.model_dump(exclude_unset=True)
-        if update_data.get("country_of_residence") is not None:
-            ensure_country_served(update_data["country_of_residence"])
-
-        for field, value in update_data.items():
-            setattr(profile, field, value)
-
-        await self.session.commit()
-        await self.session.refresh(profile)
-        return profile
-
-    # ------------------------------------------------------------------
-    # Review
-    # ------------------------------------------------------------------
-
-    async def review(
-        self, user_id: str, reviewer_id: str, data: MoreAboutUserReview
+    async def check_can_update(
+        self, user_id: str, data: MoreAboutUserUpdate, has_files: bool
     ) -> MoreAboutUsers:
         """
-        Record a reviewer's decision on the profile that belongs to user_id.
+        Everything that can reject an update before any file is uploaded, so a
+        rejected request leaves nothing behind in the bucket. Returns the profile.
 
-        The reviewer and the timestamp are set here, not taken from the caller.
-        Raises PermissionDeniedError if a reviewer tries to review their own
-        profile, and AccountNotFoundError when there is no such profile.
+        Raises AccountNotFoundError when there is no profile, NothingToUpdateError
+        when nothing was sent, and UnsupportedCountryError for an unserved country.
         """
-        if reviewer_id == user_id:
-            raise PermissionDeniedError("You cannot review your own profile")
-
         profile = await self._get_by_user_id(user_id)
         if not profile:
             raise AccountNotFoundError("No profile found for this user.")
 
-        profile.profile_verification_complete = data.profile_verification_complete
-        profile.reviewer_id = reviewer_id
-        profile.reviewed_by = data.reviewed_by
-        profile.reviewed_at = datetime.now(timezone.utc)
+        changes = self._changes(data)
+        if not changes and not has_files:
+            raise NothingToUpdateError()
+        if "country_of_residence" in changes:
+            ensure_country_served(changes["country_of_residence"])
+        return profile
+
+    async def update(
+        self,
+        user_id: str,
+        data: MoreAboutUserUpdate,
+        document_link: Optional[UploadedURL] = None,
+        profile_picture: Optional[UploadedURL] = None,
+    ) -> MoreAboutUsers:
+        """
+        Partially update the profile that belongs to user_id: the personal
+        details given in data, and/or replacement files (already uploaded).
+
+        Only what was actually sent is written. Editing a profile that has
+        already been decided (approved or rejected) puts it back to pending, so a
+        reviewer looks at the new details - which is also how a rejected client
+        asks for another review. The reviewer's earlier comment stays visible
+        until the next decision.
+
+        Raises the same errors as check_can_update.
+        """
+        profile = await self.check_can_update(
+            user_id, data, has_files=document_link is not None or profile_picture is not None
+        )
+
+        for field, value in self._changes(data).items():
+            setattr(profile, field, value)
+        if document_link is not None:
+            profile.document_link = str(document_link.link)
+        if profile_picture is not None:
+            profile.profile_picture = str(profile_picture.link)
+
+        await self._reopen_review(profile)
 
         await self.session.commit()
         await self.session.refresh(profile)
         return profile
-
-    # ------------------------------------------------------------------
-    # Delete
-    # ------------------------------------------------------------------
-
-    async def delete(self, user_id: str) -> dict:
-        """
-        Delete the profile for the given user_id.
-
-        Raises AccountNotFoundError when no matching row is found.
-        """
-        profile = await self._get_by_user_id(user_id)
-        if not profile:
-            raise AccountNotFoundError("No profile found for this user.")
-
-        await self.session.delete(profile)
-        await self.session.commit()
-        return {"success": True, "message": "Profile deleted successfully."}
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -200,3 +171,21 @@ class MoreAboutUserService:
         statement = select(MoreAboutUsers).where(MoreAboutUsers.user_id == user_id)
         result = await self.session.execute(statement)
         return result.scalar_one_or_none()
+
+    @staticmethod
+    def _changes(data: MoreAboutUserUpdate) -> dict:
+        """The fields the caller actually sent (None means "leave as it is")."""
+        return {
+            field: value
+            for field, value in data.model_dump(exclude_unset=True).items()
+            if value is not None
+        }
+
+    async def _reopen_review(self, profile: MoreAboutUsers) -> None:
+        """Send a decided profile back to pending, on the profile and on the user."""
+        if profile.profile_verification_complete == UserAccountStatus.PENDING:
+            return
+        profile.profile_verification_complete = UserAccountStatus.PENDING
+        user = await self.session.get(Users, profile.user_id)
+        if user is not None:
+            user.profile_verification_complete = UserAccountStatus.PENDING

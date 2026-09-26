@@ -1,7 +1,7 @@
 import asyncio
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -15,6 +15,8 @@ from app.routers.more_about_user.more_about_user_router import router
 from app.schema import role as role_module
 from app.schema.email_auth_schema import User_signup_schema
 from app.schema.phone_auth_schema import PhoneNumberSignup
+from app.model.mod_enum import AccountStatus
+from app.services.auth import current_user
 from app.services.auth.authorization import get_role
 from app.services.auth.firebase_auth.auth_errors import AuthError, auth_error_handler
 from app.services.auth.phone.token.jwt import JwtManagement
@@ -26,11 +28,37 @@ CLIENT, AGENT, BROKER, FUND = (
 )
 
 
+# What the fake database knows: user_id -> (role, status). The gate takes the
+# role from here, exactly as it does from the Users table in production.
+ACCOUNTS: dict = {}
+
+
 def make_token(user_id: str, role) -> str:
-    """A real token, exactly as PhoneAuthentication.login issues it."""
+    """A real token, as PhoneAuthentication.login issues it, for an account that exists."""
+    ACCOUNTS[user_id] = (UserRole(role) if role in [r.value for r in UserRole] else role, AccountStatus.ACTIVE)
     return asyncio.run(JwtManagement().encode_auth(
-        {"user_id": user_id, "firebase_uid": None, "role": role}
+        {"user_id": user_id, "firebase_uid": None, "role": role, "token_version": 0}
     ))
+
+
+@pytest.fixture(autouse=True)
+def fake_accounts(monkeypatch):
+    ACCOUNTS.clear()
+
+    async def fake_find_user_by_id(session, user_id):
+        if user_id not in ACCOUNTS:
+            return None
+        role, account_status = ACCOUNTS[user_id]
+        return SimpleNamespace(
+            id=user_id, role=role, status=account_status, token_version=0, firebase_uid=None,
+            must_change_password=False,
+        )
+
+    async def fake_has_agent_profile(session, user_id):
+        return True
+
+    monkeypatch.setattr(current_user, "find_user_by_id", fake_find_user_by_id)
+    monkeypatch.setattr(current_user, "has_agent_profile", fake_has_agent_profile)
 
 
 def auth(user_id: str, role) -> dict:
@@ -47,7 +75,7 @@ def make_profile_row(user_id: str = "user123") -> SimpleNamespace:
         document_expiry_date=date(2030, 1, 1),
         profile_picture="https://files.example.com/pic.png",
         profile_verification_complete=UserAccountStatus.PENDING,
-        reviewer_id=None, reviewed_by=None, reviewed_at=None,
+        reviewer_id=None, reviewed_by=None, reviewed_at=None, review_comment=None,
         updated_at=datetime.now(timezone.utc),
     )
 
@@ -86,7 +114,7 @@ class TestRoleClaim:
         payload = asyncio.run(JwtManagement().decode_auth(make_token("u1", role)))
         assert get_role(payload) == role
 
-    @pytest.mark.parametrize("payload", [{}, {"role": None}, {"role": "Admin"}, {"role": ""}])
+    @pytest.mark.parametrize("payload", [{}, {"role": None}, {"role": "Superuser"}, {"role": ""}])
     def test_missing_or_unknown_role_is_none(self, payload):
         assert get_role(payload) is None
 
@@ -96,46 +124,37 @@ class TestRoleClaim:
 # ---------------------------------------------------------------------------
 
 class TestAuthentication:
-    @pytest.mark.parametrize("method,path", [
-        ("get", "/all"), ("get", "/user123"), ("put", "/user123"),
-        ("put", "/user123/review"), ("delete", "/user123"),
-    ])
+    @pytest.mark.parametrize("method,path", [("get", "/user123"), ("put", "/user123")])
     def test_no_token_is_rejected(self, api, method, path):
         assert getattr(api.client, method)(BASE + path).status_code in (401, 403)
 
     def test_garbage_token_is_401(self, api):
-        response = api.client.get(BASE + "/all", headers={"Authorization": "Bearer not-a-real-token"})
+        response = api.client.get(BASE + "/user123", headers={"Authorization": "Bearer not-a-real-token"})
         assert response.status_code == 401
 
-    def test_token_with_an_unknown_role_is_403(self, api):
-        response = api.client.get(BASE + "/all", headers=auth("u1", "Admin"))
+    def test_an_admin_account_has_no_access_to_client_profiles(self, api):
+        """Admins manage accounts; they don't read client KYC."""
+        response = api.client.get(BASE + "/user123", headers=auth("boss1", UserRole.ADMIN))
         assert response.status_code == 403
 
-    def test_token_with_no_role_is_403(self, api):
-        token = asyncio.run(JwtManagement().encode_auth({"user_id": "u1"}))
-        response = api.client.get(BASE + "/all", headers={"Authorization": f"Bearer {token}"})
+    def test_the_role_comes_from_the_database_not_the_token(self, api):
+        """A token that claims Agent for an account that is really a client gets client rights."""
+        ACCOUNTS["user123"] = (CLIENT, AccountStatus.ACTIVE)
+        token = asyncio.run(JwtManagement().encode_auth(
+            {"user_id": "user123", "role": "Agent", "token_version": 0}
+        ))
+        # a client reading someone else's profile is refused, whatever the token claims
+        response = api.client.get(BASE + "/somebody-else", headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 403
+
+    def test_a_disabled_account_is_locked_out_immediately(self, api):
+        headers = auth("user123", CLIENT)
+        ACCOUNTS["user123"] = (CLIENT, AccountStatus.DISABLE)
+        assert api.client.get(BASE + "/user123", headers=headers).status_code == 403
 
 
 # ---------------------------------------------------------------------------
-# GET /all - reviewers only
-# ---------------------------------------------------------------------------
-
-class TestListProfiles:
-    @pytest.mark.parametrize("role", [AGENT, BROKER])
-    def test_reviewers_can_list(self, api, role):
-        response = api.client.get(BASE + "/all", headers=auth("staff1", role))
-        assert response.status_code == 200
-        assert len(response.json()) == 1
-
-    @pytest.mark.parametrize("role", [CLIENT, FUND])
-    def test_clients_and_fund_managers_cannot_list(self, api, role):
-        response = api.client.get(BASE + "/all", headers=auth("user123", role))
-        assert response.status_code == 403
-
-
-# ---------------------------------------------------------------------------
-# GET /{user_id} - own profile, or any profile for reviewers
+# GET /{user_id} - a client reads their own profile
 # ---------------------------------------------------------------------------
 
 class TestReadProfile:
@@ -144,161 +163,203 @@ class TestReadProfile:
         assert response.status_code == 200
         assert response.json()["user_id"] == "user123"
 
+    def test_the_review_status_and_comment_are_visible_to_the_client(self, api):
+        api.profile.profile_verification_complete = UserAccountStatus.REJECTED
+        api.profile.review_comment = "ID photo is blurry"
+        body = api.client.get(BASE + "/user123", headers=auth("user123", CLIENT)).json()
+        assert body["profile_verification_complete"] == "rejected"
+        assert body["review_comment"] == "ID photo is blurry"
+
     def test_client_cannot_read_someone_elses(self, api):
         response = api.client.get(BASE + "/user123", headers=auth("intruder", CLIENT))
         assert response.status_code == 403
 
-    @pytest.mark.parametrize("role", [AGENT, BROKER])
-    def test_reviewers_read_any_profile(self, api, role):
-        assert api.client.get(BASE + "/user123", headers=auth("staff1", role)).status_code == 200
-
-    def test_fund_manager_cannot_read_profiles(self, api):
-        assert api.client.get(BASE + "/user123", headers=auth("fm1", FUND)).status_code == 403
+    @pytest.mark.parametrize("role", [AGENT, FUND, BROKER, UserRole.ADMIN])
+    def test_agents_and_admins_do_not_use_this_endpoint(self, api, role):
+        """Reviewers load profiles through /api/v1/reviews instead."""
+        assert api.client.get(BASE + "/user123", headers=auth("other1", role)).status_code == 403
 
 
 # ---------------------------------------------------------------------------
-# PUT /{user_id} - a client edits their own personal details
+# PUT /{user_id} - a client edits their own profile (same shape as create)
 # ---------------------------------------------------------------------------
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+PDF = b"%PDF-1.7\n" + b"x" * 32
+
+
+@pytest.fixture
+def uploads(monkeypatch):
+    """Replace the bucket upload, and record what would have been uploaded."""
+    target = "app.routers.more_about_user.more_about_user_router.upload"
+    with patch(target, AsyncMock(side_effect=lambda f, **kw: f"https://files.example.com/{kw['folder_name']}/new")) as up:
+        yield up
+
 
 class TestUpdateProfile:
+    def put(self, api, user="user123", role=CLIENT, **kwargs):
+        return api.client.put(BASE + "/user123", headers=auth(user, role), **kwargs)
+
     def test_client_updates_their_own(self, api):
-        response = api.client.put(
-            BASE + "/user123", json={"profession": "NURSE"}, headers=auth("user123", CLIENT)
-        )
+        response = self.put(api, data={"first_name": "Bob"})
         assert response.status_code == 200
+        assert api.profile.first_name == "Bob"
+
+    def test_it_is_normalised_like_create(self, api):
+        self.put(api, data={"city_of_residence": "Entebbe", "full_address": "Plot 7 Main ST", "profession": "nurse"})
+        assert api.profile.city_of_residence == "ENTEBBE"
+        assert api.profile.full_address == "plot 7 main st"
         assert api.profile.profession == "NURSE"
 
-    def test_client_cannot_update_someone_elses(self, api):
-        response = api.client.put(
-            BASE + "/user123", json={"profession": "NURSE"}, headers=auth("intruder", CLIENT)
-        )
-        assert response.status_code == 403
+    def test_only_what_is_sent_changes(self, api):
+        self.put(api, data={"first_name": "Bob"})
+        assert api.profile.last_name == "User" and api.profile.profession == "ENGINEER"
+
+    def test_blank_fields_mean_not_provided(self, api):
+        response = self.put(api, data={"first_name": "Bob", "profession": "", "date_of_birth": ""})
+        assert response.status_code == 200
         assert api.profile.profession == "ENGINEER"
+
+    def test_client_cannot_update_someone_elses(self, api):
+        response = self.put(api, user="intruder", data={"first_name": "Bob"})
+        assert response.status_code == 403
+        assert api.profile.first_name == "Test"
         api.session.commit.assert_not_called()
 
-    @pytest.mark.parametrize("role", [AGENT, BROKER, FUND])
-    def test_staff_cannot_use_the_client_update(self, api, role):
-        response = api.client.put(
-            BASE + "/user123", json={"profession": "NURSE"}, headers=auth("staff1", role)
-        )
-        assert response.status_code == 403
+    @pytest.mark.parametrize("role", [AGENT, BROKER, FUND, UserRole.ADMIN])
+    def test_non_clients_cannot_use_the_client_update(self, api, role):
+        assert self.put(api, user="other1", role=role, data={"first_name": "Bob"}).status_code == 403
 
-    def test_client_cannot_approve_their_own_profile(self, api):
-        """Review fields and file links are not part of the client update at all."""
-        response = api.client.put(
-            BASE + "/user123",
-            json={
-                "profession": "NURSE",
-                "profile_verification_complete": "approved",
-                "reviewer_id": "me",
-                "reviewed_by": "me",
-                "document_link": "https://evil.example.com/x.pdf",
-                "profile_picture": "https://evil.example.com/y.png",
-            },
-            headers=auth("user123", CLIENT),
-        )
+    def test_client_cannot_approve_their_own_profile_or_swap_links(self, api):
+        """Review fields and file links are not accepted as form fields at all."""
+        response = self.put(api, data={
+            "first_name": "Bob",
+            "profile_verification_complete": "approved",
+            "review_comment": "looks good",
+            "reviewer_id": "me", "reviewed_by": "me",
+            "document_link": "https://evil.example.com/x.pdf",
+            "profile_picture_link": "https://evil.example.com/y.png",
+        })
 
         assert response.status_code == 200
-        assert api.profile.profession == "NURSE"  # the allowed field was applied
+        assert api.profile.first_name == "Bob"
         assert api.profile.profile_verification_complete == UserAccountStatus.PENDING
-        assert api.profile.reviewer_id is None
-        assert api.profile.reviewed_by is None
+        assert api.profile.review_comment is None
+        assert api.profile.reviewer_id is None and api.profile.reviewed_by is None
         assert api.profile.document_link == "https://files.example.com/doc.pdf"
-        assert api.profile.profile_picture == "https://files.example.com/pic.png"
 
     def test_residence_must_still_be_a_served_country(self, api):
-        response = api.client.put(
-            BASE + "/user123", json={"country_of_residence": "KE"}, headers=auth("user123", CLIENT)
-        )
-        assert response.status_code == 403
+        assert self.put(api, data={"country_of_residence": "KE"}).status_code == 403
+
+    def test_sending_nothing_is_a_400(self, api):
+        response = self.put(api, data={})
+        assert response.status_code == 400
+        assert "nothing to update" in response.json()["detail"].lower()
+
+    def test_a_bad_value_is_a_422_like_everywhere_else(self, api):
+        response = self.put(api, data={"date_of_birth": "not-a-date"})
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"][:2] == ["body", "date_of_birth"]
+
+    def test_a_missing_profile_is_404(self, api):
+        api.app.dependency_overrides[get_session] = lambda: make_session(None)
+        assert self.put(api, data={"first_name": "Bob"}).status_code == 404
 
 
-# ---------------------------------------------------------------------------
-# PUT /{user_id}/review - reviewers decide
-# ---------------------------------------------------------------------------
+class TestEditingReopensTheReview:
+    @pytest.mark.parametrize("decided", [UserAccountStatus.APPROVED, UserAccountStatus.REJECTED])
+    def test_editing_a_decided_profile_sends_it_back_to_pending(self, api, decided):
+        api.profile.profile_verification_complete = decided
+        api.profile.review_comment = "earlier reason"
 
-class TestReviewProfile:
-    @pytest.mark.parametrize("role", [AGENT, BROKER])
-    @pytest.mark.parametrize("decision", ["approved", "rejected"])
-    def test_reviewers_record_a_decision(self, api, role, decision):
-        response = api.client.put(
-            BASE + "/user123/review",
-            json={"profile_verification_complete": decision, "reviewed_by": "Simlexx Ltd"},
-            headers=auth("staff1", role),
-        )
+        response = api.client.put(BASE + "/user123", headers=auth("user123", CLIENT), data={"first_name": "Bob"})
 
         assert response.status_code == 200
-        assert api.profile.profile_verification_complete == UserAccountStatus(decision)
-        assert api.profile.reviewer_id == "staff1"
-        assert api.profile.reviewed_by == "Simlexx Ltd"
-        assert isinstance(api.profile.reviewed_at, datetime)
-        api.session.commit.assert_awaited_once()
+        assert api.profile.profile_verification_complete == UserAccountStatus.PENDING
+        assert response.json()["profile_verification_complete"] == "pending"
+        assert api.profile.review_comment == "earlier reason"   # stays visible until the next decision
 
-    def test_reviewer_identity_comes_from_the_token_not_the_body(self, api):
-        api.client.put(
-            BASE + "/user123/review",
-            json={"profile_verification_complete": "approved", "reviewer_id": "someone-else"},
-            headers=auth("staff1", AGENT),
-        )
-        assert api.profile.reviewer_id == "staff1"
+    def test_the_users_own_status_follows(self, api):
+        api.profile.profile_verification_complete = UserAccountStatus.REJECTED
+        account = SimpleNamespace(profile_verification_complete=UserAccountStatus.REJECTED)
+        api.session.get = AsyncMock(return_value=account)
 
-    @pytest.mark.parametrize("role", [CLIENT, FUND])
-    def test_clients_and_fund_managers_cannot_review(self, api, role):
-        response = api.client.put(
-            BASE + "/user123/review",
-            json={"profile_verification_complete": "approved"},
-            headers=auth("user123", role),
-        )
-        assert response.status_code == 403
+        api.client.put(BASE + "/user123", headers=auth("user123", CLIENT), data={"first_name": "Bob"})
+
+        assert account.profile_verification_complete == UserAccountStatus.PENDING
+
+    def test_a_pending_profile_stays_pending(self, api):
+        api.session.get = AsyncMock()
+        api.client.put(BASE + "/user123", headers=auth("user123", CLIENT), data={"first_name": "Bob"})
+        api.session.get.assert_not_called()
+
+    def test_a_rejected_request_does_not_reopen_anything(self, api):
+        api.profile.profile_verification_complete = UserAccountStatus.APPROVED
+        api.client.put(BASE + "/user123", headers=auth("user123", CLIENT), data={"country_of_residence": "KE"})
+        assert api.profile.profile_verification_complete == UserAccountStatus.APPROVED
+
+
+class TestUpdateFiles:
+    def put(self, api, files, data=None):
+        return api.client.put(BASE + "/user123", headers=auth("user123", CLIENT), data=data or {}, files=files)
+
+    def test_a_new_document_replaces_the_link(self, api, uploads):
+        response = self.put(api, {"id_document": ("id.pdf", PDF, "application/pdf")})
+        assert response.status_code == 200
+        assert api.profile.document_link == "https://files.example.com/about/new"
+        assert api.profile.profile_picture == "https://files.example.com/pic.png"
+        assert uploads.await_args.kwargs["folder_name"] == "about" and uploads.await_args.kwargs["username"] == "user123"
+
+    def test_a_new_picture_replaces_the_link(self, api, uploads):
+        self.put(api, {"profile_picture": ("me.png", PNG, "image/png")})
+        assert api.profile.profile_picture == "https://files.example.com/profile/new"
+        assert api.profile.document_link == "https://files.example.com/doc.pdf"
+
+    def test_files_alone_count_as_an_update_and_reopen_the_review(self, api, uploads):
+        api.profile.profile_verification_complete = UserAccountStatus.REJECTED
+        assert self.put(api, {"id_document": ("id.pdf", PDF, "application/pdf")}).status_code == 200
         assert api.profile.profile_verification_complete == UserAccountStatus.PENDING
 
-    def test_reviewer_cannot_review_their_own_profile(self, api):
-        response = api.client.put(
-            BASE + "/user123/review",
-            json={"profile_verification_complete": "approved"},
-            headers=auth("user123", AGENT),
-        )
+    def test_a_bad_file_is_refused_and_nothing_is_uploaded(self, api, uploads):
+        response = self.put(api, {"id_document": ("evil.exe", b"MZ" + b"\x00" * 32, "application/octet-stream")})
+        assert response.status_code in (400, 413, 415)
+        uploads.assert_not_awaited()
+        assert api.profile.document_link == "https://files.example.com/doc.pdf"
+
+    def test_a_pdf_is_not_a_valid_profile_picture(self, api, uploads):
+        response = self.put(api, {"profile_picture": ("me.pdf", PDF, "application/pdf")})
+        assert response.status_code in (400, 415)
+        uploads.assert_not_awaited()
+
+    def test_nothing_is_uploaded_when_the_update_would_be_refused_anyway(self, api, uploads):
+        response = self.put(api, {"id_document": ("id.pdf", PDF, "application/pdf")}, data={"country_of_residence": "KE"})
         assert response.status_code == 403
-        assert api.profile.profile_verification_complete == UserAccountStatus.PENDING
+        uploads.assert_not_awaited()
 
-    def test_a_review_must_approve_or_reject(self, api):
-        response = api.client.put(
-            BASE + "/user123/review",
-            json={"profile_verification_complete": "pending"},
-            headers=auth("staff1", AGENT),
-        )
-        assert response.status_code == 422
+    def test_an_empty_file_part_is_ignored(self, api, uploads):
+        response = self.put(api, {"id_document": ("", b"", "application/octet-stream")}, data={"first_name": "Bob"})
+        assert response.status_code == 200
+        uploads.assert_not_awaited()
 
-    def test_reviewing_a_missing_profile_is_404(self, api):
-        api.app.dependency_overrides[get_session] = lambda: make_session(None)
+
+# ---------------------------------------------------------------------------
+# There is no delete, no list and no review on the client's router any more
+# ---------------------------------------------------------------------------
+
+class TestRemovedEndpoints:
+    @pytest.mark.parametrize("role", [CLIENT, AGENT, UserRole.ADMIN])
+    def test_delete_is_gone_for_everybody(self, api, role):
+        response = api.client.delete(BASE + "/user123", headers=auth("user123", role))
+        assert response.status_code == 405
+        assert api.profile is not None
+        api.session.delete.assert_not_called()
+
+    def test_reviewing_is_not_offered_here(self, api):
         response = api.client.put(
-            BASE + "/ghost/review",
-            json={"profile_verification_complete": "approved"},
-            headers=auth("staff1", AGENT),
+            BASE + "/user123/review", headers=auth("other1", AGENT),
+            json={"decision": "approved", "comment": "fine"},
         )
         assert response.status_code == 404
-
-
-# ---------------------------------------------------------------------------
-# DELETE /{user_id} - a client removes their own profile
-# ---------------------------------------------------------------------------
-
-class TestDeleteProfile:
-    def test_client_deletes_their_own(self, api):
-        response = api.client.delete(BASE + "/user123", headers=auth("user123", CLIENT))
-        assert response.status_code == 200
-        api.session.delete.assert_awaited_once()
-
-    def test_client_cannot_delete_someone_elses(self, api):
-        response = api.client.delete(BASE + "/user123", headers=auth("intruder", CLIENT))
-        assert response.status_code == 403
-        api.session.delete.assert_not_called()
-
-    @pytest.mark.parametrize("role", [AGENT, BROKER, FUND])
-    def test_staff_cannot_delete_profiles(self, api, role):
-        response = api.client.delete(BASE + "/user123", headers=auth("staff1", role))
-        assert response.status_code == 403
-        api.session.delete.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -313,8 +374,8 @@ class TestCreateRoleGuard:
         "document_id": "1", "document_expiry_date": "2030-01-01",
     }
 
-    @pytest.mark.parametrize("role", [AGENT, BROKER, FUND])
-    def test_staff_cannot_create_a_client_profile(self, api, role):
+    @pytest.mark.parametrize("role", [AGENT, BROKER, FUND, UserRole.ADMIN])
+    def test_non_clients_cannot_create_a_client_profile(self, api, role):
         response = api.client.post(
             BASE + "/create",
             data=self.FORM,
@@ -322,7 +383,7 @@ class TestCreateRoleGuard:
                 "id_document": ("id.pdf", b"%PDF-1.7 x", "application/pdf"),
                 "profile_picture": ("me.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 16, "image/png"),
             },
-            headers=auth("staff1", role),
+            headers=auth("other1", role),
         )
         assert response.status_code == 403
 
@@ -351,14 +412,14 @@ class TestSelfRegistrationRoles:
         self_registration(["User"])
         assert PhoneNumberSignup(**PHONE_SIGNUP, role=CLIENT).role == CLIENT
 
-    @pytest.mark.parametrize("role", [AGENT, BROKER, FUND])
-    def test_staff_roles_cannot_be_self_assigned_by_phone_signup(self, self_registration, role):
+    @pytest.mark.parametrize("role", [AGENT, FUND, BROKER])
+    def test_agent_and_other_roles_cannot_be_self_assigned_by_phone_signup(self, self_registration, role):
         self_registration(["User"])
         with pytest.raises(ValidationError, match="self-registration"):
             PhoneNumberSignup(**PHONE_SIGNUP, role=role)
 
-    @pytest.mark.parametrize("role", [AGENT, BROKER, FUND])
-    def test_staff_roles_cannot_be_self_assigned_by_firebase_signup(self, self_registration, role):
+    @pytest.mark.parametrize("role", [AGENT, FUND, BROKER])
+    def test_agent_and_other_roles_cannot_be_self_assigned_by_firebase_signup(self, self_registration, role):
         self_registration(["User"])
         with pytest.raises(ValidationError, match="self-registration"):
             User_signup_schema(phone_number="+250781234567", role=role)
@@ -382,6 +443,10 @@ class TestSelfRegistrationSettingParsing:
     def test_empty_means_nobody_can_self_register(self):
         assert self.parse("") == []
 
-    def test_unknown_role_fails_fast(self):
+    def test_admin_can_never_be_opened_to_self_registration(self):
         with pytest.raises(ValueError, match="Admin"):
             self.parse("User,Admin")
+
+    def test_unknown_role_fails_fast(self):
+        with pytest.raises(ValueError, match="Superuser"):
+            self.parse("User,Superuser")

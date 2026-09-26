@@ -20,7 +20,7 @@ from app.services.auth.firebase_auth.auth_errors import (
     UnsupportedCountryError,
     auth_error_handler,
 )
-from app.services.auth.phone.token.jwt_dependency import verify_jwt_token
+from app.services.auth.current_user import get_current_user
 from app.services.more_about_user.more_about_user_service import MoreAboutUserService
 from app.services.reference import country_service
 
@@ -184,7 +184,7 @@ def api(monkeypatch, served_countries):
     app.add_exception_handler(AuthError, auth_error_handler)
 
     session = make_session()
-    app.dependency_overrides[verify_jwt_token] = lambda: {"user_id": "user123", "role": "User"}
+    app.dependency_overrides[get_current_user] = lambda: {"user_id": "user123", "role": "User"}
     app.dependency_overrides[get_session] = lambda: session
 
     async def fake_upload(file, folder_name, username, allowed_extensions=None):
@@ -332,7 +332,7 @@ class TestCreateEndpoint:
 
 class TestCreateEndpointAuth:
     def test_requires_a_token(self, api):
-        del api.app.dependency_overrides[verify_jwt_token]
+        del api.app.dependency_overrides[get_current_user]
 
         response = post_create(api)
 
