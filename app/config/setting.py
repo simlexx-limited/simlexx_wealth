@@ -3,7 +3,7 @@ from functools import lru_cache
 from typing import Annotated, Optional
 
 import pycountry
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.model.mod_enum import UserRole
@@ -49,7 +49,9 @@ class Settings(BaseSettings):
     R2_SECRET_ACCESS_KEY:str
     R2_BUCKET_NAME:str
     R2_JURISDICTION:Optional[str] = None
-    BUCKET_URL:str
+
+    # How long a signed link to an uploaded file stays valid (R2 allows at most 7 days)
+    SIGNED_URL_EXPIRE_SECONDS:int = Field(default=900, ge=60, le=604800)
 
     # Firebase
     PATH_TO_FIREBASE:str
@@ -142,10 +144,6 @@ class Settings(BaseSettings):
     def r2_endpoint_url(self) -> str:
         jurisdiction = f"{self.R2_JURISDICTION}." if self.R2_JURISDICTION else ""
         return f"https://{self.R2_ACCOUNT_ID}.{jurisdiction}r2.cloudflarestorage.com"
-
-    @property
-    def r2_public_url_base(self) -> str:
-        return self.BUCKET_URL.rstrip("/")
 
 
 @lru_cache
