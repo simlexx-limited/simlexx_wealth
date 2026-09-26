@@ -31,8 +31,12 @@ async def register_first_admin(
     First-run setup of the Simlexx administrator. Open only while no admin
     exists; once one has been created this returns 403 for everyone.
 
-    Confirm the phone number afterwards with POST
-    /api/v1/auth/phone_auth/register/confirm, then log in.
+    The account is created already verified and approved, so you can log in
+    right away with POST /api/v1/auth/phone_auth/login (phone number and
+    password). A one-time code is also sent to the admin's email, never by SMS.
+
+    There is no secret on this endpoint, so call it yourself immediately after
+    deploying, before the API is reachable by anyone else.
     """
     return await AdminService(session).register_first_admin(
         data=admin_data,

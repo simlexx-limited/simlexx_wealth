@@ -66,8 +66,10 @@ come from that verified token, so the body only has `phone_number` and `role`.
 **Admin**
 - The first admin: `POST /api/v1/simlexx/admin/register`, open **only while no
   admin exists** (a Postgres advisory lock stops two callers both winning).
-  The OTP goes to the admin's email, not SMS. Confirm it at
-  `phone_auth/register/confirm`, then log in by phone.
+  The account is created already verified and approved (we choose our own
+  admins, so there is nothing to verify), and can log in by phone right away.
+  A one-time code is also sent to the admin's email only, never by SMS. There is
+  no secret on this endpoint: call it yourself straight after deploying.
 - More admins: `POST /simlexx/admin/admins` (a temporary password is emailed).
 
 **Agent**

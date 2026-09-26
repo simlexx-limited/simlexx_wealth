@@ -41,9 +41,12 @@ def make_session(admins_existing: int = 0) -> AsyncMock:
     count.scalar_one.return_value = admins_existing
 
     async def refresh(user):
+        # like a real refresh: only fill what the database would default, never overwrite
         user.id = "admin-1"
-        user.status = AccountStatus.ACTIVE
-        user.profile_verification_complete = UserAccountStatus.PENDING
+        if getattr(user, "status", None) is None:
+            user.status = AccountStatus.ACTIVE
+        if getattr(user, "profile_verification_complete", None) is None:
+            user.profile_verification_complete = UserAccountStatus.PENDING
         user.created_at = datetime.now(timezone.utc)
 
     session.execute = AsyncMock(side_effect=[lock, count])
@@ -71,7 +74,8 @@ def added(session):
 
 
 class TestFirstAdmin:
-    def test_creates_an_unverified_admin(self, service_parts):
+    def test_creates_a_verified_and_approved_admin(self, service_parts):
+        """An admin has no profile to review, and SMS can't verify a phone yet, so it starts fully verified."""
         session = make_session()
 
         result = register(session)
@@ -81,7 +85,9 @@ class TestFirstAdmin:
         assert admin.auth_provider == AuthProvider.PHONE_NUMBER
         assert admin.phone_number == PHONE
         assert admin.email_address == EMAIL
-        assert admin.phone_number_verified is False
+        assert admin.phone_number_verified is True
+        assert admin.email_verified is True
+        assert admin.profile_verification_complete == UserAccountStatus.APPROVED
         assert result["status"] is True
 
     def test_the_password_is_stored_hashed(self, service_parts):
