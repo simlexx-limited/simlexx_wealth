@@ -68,6 +68,15 @@ class Settings(BaseSettings):
     ALGORITHM:str
     JWT_EXPIRE_MINUTES:int = 60
 
+    # Shorter session for administrators (no MFA yet, so keep the window small)
+    ADMIN_JWT_EXPIRE_MINUTES:int = 15
+
+    # Login lockout: failed password attempts allowed per phone number / per IP
+    # inside one window; hitting the limit locks that key until the window ends
+    LOGIN_MAX_FAILED_ATTEMPTS:int = 5
+    LOGIN_IP_MAX_FAILED_ATTEMPTS:int = 20
+    LOGIN_LOCKOUT_SECONDS:int = 900
+
     # OTP
     OTP_TTL_SECONDS:int = 86400
 
@@ -89,8 +98,8 @@ class Settings(BaseSettings):
                 raise ValueError(f"'{code}' is not a valid ISO country code")
         return list(dict.fromkeys(codes))
 
-    # Account types anyone may create by signing up themselves. Staff roles
-    # (agent, broker, fund manager) should come from an admin/invite flow, so
+    # Account types anyone may create by signing up themselves. Agents and
+    # admins are created by a Simlexx admin, so
     # by default only clients can self-register. In .env: SELF_REGISTRATION_ROLES=User
     SELF_REGISTRATION_ROLES:Annotated[list[str], NoDecode] = ["User"]
 
@@ -102,6 +111,8 @@ class Settings(BaseSettings):
         roles = [r.strip() for r in value if r.strip()]
         valid = {role.value for role in UserRole}
         for role in roles:
+            if role == UserRole.ADMIN.value:
+                raise ValueError("Admin accounts can't be created by self-registration")
             if role not in valid:
                 raise ValueError(f"'{role}' is not a valid role (expected one of {sorted(valid)})")
         return list(dict.fromkeys(roles))
