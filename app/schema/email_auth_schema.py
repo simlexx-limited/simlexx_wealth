@@ -44,3 +44,11 @@ class User_signup_response(BaseModel):
     status:AccountStatus
     profile_verification_complete:UserAccountStatus
     created_at:datetime
+
+
+class EmailLogin(BaseModel):
+    """
+    Login with an email address and password (checked by Firebase).
+    """
+    email:EmailStr = Field(description="Account email address")
+    password:str = Field(description="Account password")
