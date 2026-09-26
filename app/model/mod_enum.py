@@ -16,6 +16,7 @@ class UserRole(str, PyEnum):
     AGENT = "Agent"
     BROKER = "Broker"
     FUNDMANAGER = "FundManager"
+    ADMIN = "Admin"
 
 class UserAccountStatus(str, PyEnum):
     PENDING = "pending"
