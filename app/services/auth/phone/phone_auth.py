@@ -1,4 +1,5 @@
 import asyncio
+from functools import lru_cache
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -11,7 +12,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.config.setting import get_settings
 from app.model.models import Users, OtpVerification, Notifications
-from app.model.mod_enum import AuthProvider, AccountStatus, UserAccountStatus, OtpPurpose, NotificationChannel
+from app.model.mod_enum import AuthProvider, AccountStatus, UserAccountStatus, UserRole, OtpPurpose, NotificationChannel
 
 from app.services.auth.phone.token.hash_password import generate_hash, compare_hash
 from app.services.otp_management.otp_generator import generate_otp_code
@@ -23,12 +24,14 @@ from app.services.sms.sms_service import send_otp_sms
 from app.services.auth.firebase_auth.firebase_auth import Auth
 from app.services.email.tasks import send_email_task
 from app.services.auth.phone.token.jwt import JwtManagement
+from app.services.auth import login_lockout
 from app.services.auth.firebase_auth.auth_errors import (AuthError,
                                                     UnmatchedPassword,
                                                     UnverifiedAccountError,
                                                     DuplicateAccountError,
                                                     AccountDisabledError,
                                                     AccountNotFoundError,
+                                                    InvalidCredentialsError,
                                                     PasswordReuseError
                                                     )
 from app.schema.email_auth_schema import User_signup_response
@@ -40,6 +43,15 @@ from app.schema.phone_auth_schema import (PhoneNumberSignup,
                                           RequestOTP,
                                           ChangePassword
                                           )
+
+@lru_cache
+def dummy_hash() -> str:
+    """
+    A throwaway hash, so a login for an unknown phone number still pays for one
+    bcrypt comparison and can't be told apart from a wrong password by timing.
+    """
+    return generate_hash(password="not-a-real-password", rounds=12)
+
 
 class PhoneAuthentication(Auth):
     def __init__(self, security:HTTPBearer, session:AsyncSession):
@@ -113,6 +125,54 @@ class PhoneAuthentication(Auth):
             message
             )
 
+    async def send_verification_otp(
+        self, user_id:str, phone_number:str, email_address:Optional[str], email_only:bool=False
+        ) -> None:
+        """
+        Sends the phone-verification OTP for a new account (SMS always, email if
+        the account has one; only email when email_only is set), then stores it
+        in Redis and Postgres and records the notification.
+        """
+        channel = NotificationChannel.EMAIL if email_only else NotificationChannel.SMS
+        otp_code = str(generate_otp_code())
+        otp_expiry_seconds = get_settings().OTP_TTL_SECONDS
+        otp_expiry = format_ttl_duration(otp_expiry_seconds)
+
+        message = (
+            f"Hi, your account was created successfully.\n"
+            f"Your OTP code is {otp_code} that expires after {otp_expiry}"
+            )
+
+        if not email_only:
+            await send_otp_sms(phone_number=phone_number, code=otp_code)
+
+        if email_address:
+            await self.send_otp_email(
+                message=message,
+                email_address=str(email_address),
+                otp_expiry=otp_expiry,
+                code=otp_code,
+                )
+
+        await save_otp_code(
+            identifier=user_id,
+            purpose=OtpPurpose.PHONE_VERIFICATION,
+            code=otp_code
+            )
+        await OtpManagementService(self.db_session).create_otp(
+            user_id=user_id,
+            channel=channel,
+            code=otp_code,
+            purpose=OtpPurpose.PHONE_VERIFICATION,
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=otp_expiry_seconds),
+        )
+        await NotificationService(self.db_session).create_notification(
+            user_id=user_id,
+            channel=channel,
+            notification_type="welcome_otp",
+            content=message,
+        )
+
     async def register(self, register_data:PhoneNumberSignup, ip_address:Optional[str]=None, endpoint:str=""):
         """
         This function create a new user via phone number and password
@@ -155,43 +215,11 @@ class PhoneAuthentication(Auth):
             await self.db_session.refresh(new_user)
 
             user_id = str(new_user.id)
-            otp_code = str(generate_otp_code())
-            otp_expiry_seconds = get_settings().OTP_TTL_SECONDS
-            otp_expiry = format_ttl_duration(otp_expiry_seconds)
-
-            message = (
-                f"Hi, your account was created successfully.\n"
-                f"Your OTP code is {otp_code} that expires after {otp_expiry}"
-                )
-
-            await send_otp_sms(phone_number=register_data.phone_number, code=otp_code)
-
-            if register_data.email_address:
-                await self.send_otp_email(
-                    message=message,
-                    email_address=str(register_data.email_address),
-                    otp_expiry=otp_expiry,
-                    code=otp_code,
-                    )
-
-            await save_otp_code(
-                identifier=user_id,
-                purpose=OtpPurpose.PHONE_VERIFICATION,
-                code=otp_code
-                )
-            await OtpManagementService(self.db_session).create_otp(
+            await self.send_verification_otp(
                 user_id=user_id,
-                channel=NotificationChannel.SMS,
-                code=otp_code,
-                purpose=OtpPurpose.PHONE_VERIFICATION,
-                expires_at=datetime.now(timezone.utc) + timedelta(seconds=otp_expiry_seconds),
-            )
-            await NotificationService(self.db_session).create_notification(
-                user_id=user_id,
-                channel=NotificationChannel.SMS,
-                notification_type="welcome_otp",
-                content=message,
-            )
+                phone_number=register_data.phone_number,
+                email_address=register_data.email_address,
+                )
         except AuthError as exc:
             await self.log_attempt(
                 action="register",
@@ -282,20 +310,28 @@ class PhoneAuthentication(Auth):
         """
         user_id: Optional[str] = None
         try:
+            await login_lockout.ensure_not_locked(user_data.phone_number, ip_address)
+
             stment = select(Users).where(Users.phone_number == user_data.phone_number)
             search = await self.db_session.execute(stment)
             result = search.scalar_one_or_none()
-            if not result:
-                raise AccountNotFoundError(detail="Account not found")
-            user_id = str(result.id)
+            user_id = str(result.id) if result else None
+
+            # The password is always checked first, and unknown numbers, accounts
+            # without a password yet and wrong passwords all give the same answer,
+            # so this endpoint can't be used to find out who has an account.
+            stored_hash = str(result.password) if result and result.password else dummy_hash()
+            verify_password = await asyncio.to_thread(
+                compare_hash, password=user_data.password, save_password=stored_hash
+                )
+            if not (result and result.password and verify_password):
+                await login_lockout.record_failure(user_data.phone_number, ip_address)
+                raise InvalidCredentialsError(detail="Invalid phone number or password")
+
             if not result.phone_number_verified:
                 raise UnverifiedAccountError(detail="Account phone number not verified")
-
-            verify_password = await asyncio.to_thread(
-                compare_hash, password=user_data.password, save_password=str(result.password)
-                )
-            if not verify_password:
-                raise UnmatchedPassword(detail="Password did not match")
+            if result.status not in (AccountStatus.ACTIVE, AccountStatus.REACTIVE):
+                raise AccountDisabledError()
         except AuthError as exc:
             await self.log_attempt(
                 action="login",
@@ -306,13 +342,21 @@ class PhoneAuthentication(Auth):
                 )
             raise
 
+        await login_lockout.clear_failures(user_data.phone_number)
+
         info_to_encrypt = {
             "user_id":result.id,
             "firebase_uid":result.firebase_uid,
-            "role":result.role
+            "role":result.role,
+            "token_version":result.token_version or 0,
         }
+        # Administrators get a shorter session than everyone else
+        expires_delta = (
+            timedelta(minutes=get_settings().ADMIN_JWT_EXPIRE_MINUTES)
+            if result.role == UserRole.ADMIN else None
+        )
         jwt_management = JwtManagement()
-        token = await jwt_management.encode_auth(data=info_to_encrypt)
+        token = await jwt_management.encode_auth(data=info_to_encrypt, expires_delta=expires_delta)
 
         await self.log_attempt(
             action="login",
@@ -325,7 +369,9 @@ class PhoneAuthentication(Auth):
         return {
             "status":True,
             "message":"Login successful",
-            "token":token
+            "token":token,
+            "role":UserRole(result.role).value,
+            "must_change_password":bool(result.must_change_password)
         }
 
     async def request_otp(self, user_data:RequestOTP, ip_address:Optional[str]=None, endpoint:str=""):
@@ -352,7 +398,10 @@ class PhoneAuthentication(Auth):
                 f"Your OTP code is {otp_code} that expires after {otp_expiry}"
                 )
 
-            await send_otp_sms(phone_number=str(result.phone_number), code=otp_code)
+            # Admins get their codes by email only, even though they log in by phone
+            email_only = result.role == UserRole.ADMIN and bool(result.email_address)
+            if not email_only:
+                await send_otp_sms(phone_number=str(result.phone_number), code=otp_code)
 
             if result.email_address:
                 await self.send_otp_email(
@@ -369,7 +418,7 @@ class PhoneAuthentication(Auth):
                 )
             await OtpManagementService(self.db_session).create_otp(
                 user_id=user_id,
-                channel=NotificationChannel.SMS,
+                channel=NotificationChannel.EMAIL if email_only else NotificationChannel.SMS,
                 code=otp_code,
                 purpose=OtpPurpose.FORGOT_PASSWORD,
                 expires_at=datetime.now(timezone.utc) + timedelta(seconds=otp_expiry_seconds),
@@ -442,6 +491,7 @@ class PhoneAuthentication(Auth):
                 generate_hash, password=user_data.new_password, rounds=12
                 )
             result.password = new_hash
+            result.token_version = (result.token_version or 0) + 1  # sign out every existing session
             await self.db_session.commit()
             await self.db_session.refresh(result)
 

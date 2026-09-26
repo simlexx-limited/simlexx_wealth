@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, ConfigDict, computed_field, field_validator, AnyHttpUrl, AnyUrl
+from pydantic import BaseModel, Field, ConfigDict, computed_field, AnyHttpUrl, AnyUrl
 
 from app.model.mod_enum import UserAccountStatus, DocumentType
 from app.schema.country import CountryCode, country_name
@@ -32,8 +32,9 @@ class MoreAboutUserUpdate(BaseModel):
     profile. Every field is optional; only provided fields are written.
 
     Deliberately excludes the uploaded file links and everything about the
-    review (status, reviewer, timestamps): a client must not be able to set
-    those - see MoreAboutUserReview for the reviewer side.
+    review (status, reviewer, comment, timestamps): a client must not be able
+    to set those. The files are replaced by uploading new ones, and the review
+    is decided by a reviewer (see review_schema).
     """
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -47,26 +48,6 @@ class MoreAboutUserUpdate(BaseModel):
     document_type: Optional[DocumentType] = None
     document_id: Optional[str] = None
     document_expiry_date: Optional[date] = None
-
-
-class MoreAboutUserReview(BaseModel):
-    """
-    A reviewer's decision on a profile. The reviewer's id and the timestamp
-    are set by the server from the token and the clock, never from the body.
-    """
-    profile_verification_complete: UserAccountStatus = Field(
-        description="Decision: approved or rejected"
-    )
-    reviewed_by: Optional[str] = Field(
-        default=None, description="Name of the reviewer or their organization"
-    )
-
-    @field_validator("profile_verification_complete")
-    @classmethod
-    def decision_must_be_final(cls, value: UserAccountStatus) -> UserAccountStatus:
-        if value == UserAccountStatus.PENDING:
-            raise ValueError("A review must approve or reject the profile")
-        return value
 
 
 class MoreAboutUserResponse(BaseModel):
@@ -95,6 +76,7 @@ class MoreAboutUserResponse(BaseModel):
     reviewer_id: Optional[str] = None
     reviewed_by: Optional[str] = None
     reviewed_at: Optional[datetime] = None
+    review_comment: Optional[str] = None
     updated_at: datetime
 
     @computed_field  # type: ignore[prop-decorator]

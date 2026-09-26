@@ -6,7 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.database import get_session
 
+from app.services.auth.current_user import get_current_user
 from app.services.auth.phone.phone_auth import PhoneAuthentication
+from app.services.auth.sessions import revoke_sessions
 from app.services.rate_limiter.limiter import limiter, OTP_RATE_LIMIT, get_client_ip
 
 from app.schema.phone_auth_schema import PhoneNumberSignup, PhoneLogin, ConfirmOTP, RequestOTP, ChangePassword
@@ -101,3 +103,16 @@ async def change_password(
         ip_address=await get_client_ip(request),
         endpoint=request.url.path,
         )
+
+
+@router.post("/logout")
+async def logout_everywhere(
+    token_payload:dict = Depends(get_current_user),
+    session:AsyncSession = Depends(get_session)
+    ):
+    """
+    Sign this account out everywhere: every token issued so far stops working
+    and the next request has to log in again.
+    """
+    await revoke_sessions(session, token_payload["user_id"])
+    return {"status":True, "message":"You have been signed out of all sessions"}
