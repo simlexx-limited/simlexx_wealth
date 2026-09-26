@@ -77,3 +77,28 @@ def gate(monkeypatch):
         return headers(user_id, UserRole.AGENT, **kw)
 
     return SimpleNamespace(headers=headers, agent=agent)
+
+
+DUMMY_ENDPOINT = "https://test-account.r2.cloudflarestorage.com"
+
+
+@pytest.fixture(autouse=True)
+def offline_signing(monkeypatch):
+    """
+    Signing a link is a local calculation, so tests do it for real, but with
+    dummy credentials: the results never depend on (or leak) what is in .env.
+    """
+    import boto3
+    from botocore.client import Config
+
+    from app.services.storage import signed_urls
+
+    client = boto3.client(
+        "s3",
+        aws_access_key_id="test-key",
+        aws_secret_access_key="test-secret",
+        endpoint_url=DUMMY_ENDPOINT,
+        region_name="auto",
+        config=Config(signature_version="s3v4"),
+    )
+    monkeypatch.setattr(signed_urls, "signing_client", lambda: client)
