@@ -16,6 +16,7 @@ class UserRole(str, PyEnum):
     AGENT = "Agent"
     BROKER = "Broker"
     FUNDMANAGER = "FundManager"
+    ADMIN = "Admin"
 
 class UserAccountStatus(str, PyEnum):
     PENDING = "pending"
@@ -26,6 +27,13 @@ class AccountStatus(str, PyEnum):
     ACTIVE = "Active"
     DISABLE = "Disable"
     REACTIVE = "Reactived"
+
+class OtpPurpose(str, PyEnum):
+    PHONE_VERIFICATION = "phone_verification"
+    EMAIL_VERIFICATION = "email_verification"
+    FORGOT_PASSWORD = "forgot_password"
+    MFA = "mfa"
+    EDIT_SENSITIVE_INFO = "edit_sensitive_info"
 
 class NotificationChannel(str, PyEnum):
     SMS = "sms"
@@ -57,6 +65,11 @@ class NotificationStatus(str, PyEnum):
     FAILED = "failed"
     READ = "read"
     NOT_READ = "not_read"
+
+class DocumentType(str, PyEnum):
+    NATIONAL_ID = "national_id"
+    PASSPORT = "passport"
+    DRIVING_PERMIT = "driving_permit"
 
 class CurrencyType(str, PyEnum):
     DZD = "DZD"

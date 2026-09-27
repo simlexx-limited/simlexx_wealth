@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, EmailStr, field_validator, ConfigDict
 
 from app.model.mod_enum import UserRole, AuthProvider, AccountStatus, UserAccountStatus
+from app.schema.role import SelfRegistrationRole
 
 class EmailSignINSchema(BaseModel):
     """
@@ -20,7 +21,7 @@ class User_signup_schema(BaseModel):
     User login schema
     """
     phone_number:str = Field(description="User phone number")
-    role:UserRole = Field(description="User role")
+    role:SelfRegistrationRole = Field(description="Account type")
 
     @field_validator("phone_number")
     @classmethod
@@ -43,3 +44,11 @@ class User_signup_response(BaseModel):
     status:AccountStatus
     profile_verification_complete:UserAccountStatus
     created_at:datetime
+
+
+class EmailLogin(BaseModel):
+    """
+    Login with an email address and password (checked by Firebase).
+    """
+    email:EmailStr = Field(description="Account email address")
+    password:str = Field(description="Account password")

@@ -33,6 +33,13 @@ class AccountNotFoundError(AuthError):
     status_code = 404
     detail = "Account not found"
 
+class UnmatchedPassword(AuthError):
+    status_code = 400
+    detail = "Password did not match"
+
+class PasswordReuseError(AuthError):
+    status_code = 400
+    detail = "New password must be different from your current password. Use a different password or log in instead"
 
 class AccountDisabledError(AuthError):
     status_code = 403
@@ -43,10 +50,38 @@ class UnverifiedAccountError(AuthError):
     status_code = 403
     detail = "Account not verified"
 
+class PermissionDeniedError(AuthError):
+    status_code = 403
+    detail = "You do not have permission to do this"
+
+class NothingToUpdateError(AuthError):
+    status_code = 400
+    detail = "Nothing to update: send at least one field or file"
+
+class EmailNotQueuedError(AuthError):
+    status_code = 503
+    detail = "The email could not be queued. Try again shortly"
+
+class WeakPasswordError(AuthError):
+    status_code = 400
+    detail = "That password is too weak"
+
+class PasswordChangeRequiredError(AuthError):
+    status_code = 403
+    detail = "You must change your temporary password before you can continue"
+
+class AgentAccountIncompleteError(AuthError):
+    status_code = 403
+    detail = "This agent account is not fully set up. Contact your administrator"
+
+class AccountLockedError(AuthError):
+    status_code = 429
+    detail = "Too many failed attempts. Try again later"
+
+class UnsupportedCountryError(AuthError):
+    status_code = 403
+    detail = "Simlexx is not yet available in your country of residence"
+
 async def auth_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    # Starlette's exception-handler type is contravariant in `exc` (it must
-    # accept any Exception to be a valid handler), even though it's only
-    # ever actually invoked with AuthError here, per the registration in
-    # app/routing.py: app.add_exception_handler(AuthError, auth_error_handler).
     assert isinstance(exc, AuthError)
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})

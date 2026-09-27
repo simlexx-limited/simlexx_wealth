@@ -7,11 +7,18 @@ from fastapi import HTTPException
 from fastapi.security import HTTPBearer
 from sqlalchemy.exc import IntegrityError
 
-from app.model.mod_enum import AccountStatus, AuthProvider, UserAccountStatus, UserRole
+from app.model.mod_enum import (
+    AccountStatus,
+    AuthProvider,
+    NotificationChannel,
+    OtpPurpose,
+    UserAccountStatus,
+    UserRole,
+)
 from app.schema.email_auth_schema import EmailSignINSchema, User_signup_schema
-from app.services.firebase_auth.auth_errors import DuplicateAccountError, UnverifiedAccountError
-from app.services.firebase_auth.email_Auth import Email_Auth
-from app.services.firebase_auth.firebase_auth import Auth
+from app.services.auth.firebase_auth.auth_errors import DuplicateAccountError, UnverifiedAccountError
+from app.services.auth.firebase_auth.email_Auth import Email_Auth
+from app.services.auth.firebase_auth.firebase_auth import Auth
 
 
 def make_signup_schema(**overrides: Any) -> User_signup_schema:
@@ -61,7 +68,7 @@ class TestVerifyCredentials:
 
         decoded = {"uid": "abc123", "email": "test@example.com", "email_verified": True}
         with patch(
-            "app.services.firebase_auth.firebase_auth.auth.verify_id_token",
+            "app.services.auth.firebase_auth.firebase_auth.auth.verify_id_token",
             return_value=decoded,
         ) as mock_verify:
             result = await auth_service.verify_credentials(credentials=fake_credentials)
@@ -76,7 +83,7 @@ class TestVerifyCredentials:
         fake_credentials.credentials = "a-bad-token"
 
         with patch(
-            "app.services.firebase_auth.firebase_auth.auth.verify_id_token",
+            "app.services.auth.firebase_auth.firebase_auth.auth.verify_id_token",
             side_effect=Exception("Firebase rejected this token"),
         ):
             with pytest.raises(HTTPException) as exc_info:
@@ -173,5 +180,44 @@ class TestRegister:
         assert data.status == AccountStatus.ACTIVE
         assert data.profile_verification_complete == UserAccountStatus.PENDING
 
-        session.add.assert_called_once()
-        session.commit.assert_awaited_once()
+        # Users row + the OtpManagementService/SystemLogService audit records
+        # created after registration succeeds.
+        assert session.add.call_count == 3
+        assert session.commit.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_creates_verified_otp_audit_and_system_log_records(self):
+        """Firebase already verifies the email before this call, so the
+        OTP row created here should record that fact immediately rather
+        than represent a pending, unverified code."""
+        session = make_fake_session([False, False])
+
+        async def fake_refresh(user_obj):
+            user_obj.id = "fake-generated-id"
+            user_obj.status = AccountStatus.ACTIVE
+            user_obj.profile_verification_complete = UserAccountStatus.PENDING
+            user_obj.created_at = datetime.now(timezone.utc)
+
+        session.refresh = AsyncMock(side_effect=fake_refresh)
+        service = Email_Auth(security=HTTPBearer(), session=session)
+
+        await service.register(
+            new_user=make_signup_schema(phone_number="+250250123458"),
+            email_sigin=make_signin_schema(email="audit.check@example.com"),
+        )
+
+        added = [call.args[0] for call in session.add.call_args_list]
+        assert len(added) == 3
+
+        otp_record = added[1]
+        assert otp_record.channel == NotificationChannel.EMAIL
+        assert otp_record.purpose == OtpPurpose.EMAIL_VERIFICATION
+        assert otp_record.code == "FIREBASE_VERIFIED"
+        assert otp_record.verified_at is not None
+        assert otp_record.expires_at == otp_record.verified_at
+
+        log_record = added[2]
+        assert log_record.action == "register"
+        assert log_record.entity == "Users"
+        assert log_record.entity_id == "fake-generated-id"
+        assert "email/password" in log_record.description.lower()

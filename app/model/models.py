@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.model.base import Base
@@ -16,7 +16,9 @@ from app.model.mod_enum import (
     ProductType,
     MultifactorAuth,
     NotificationStatus,
-    CurrencyType
+    CurrencyType,
+    OtpPurpose,
+    DocumentType
     )
 from sqlalchemy import (
     Float,
@@ -43,12 +45,16 @@ class Users(Base):
     id:Mapped[String] = mapped_column(String, primary_key=True, unique=True, default=id_generator)
     email_address:Mapped[String] = mapped_column(String, unique=True, nullable=True)
     phone_number:Mapped[String] = mapped_column(String, nullable=False, unique=True)
-    password:Mapped[String] = mapped_column(String, nullable=True)
+    password:Mapped[Optional[str]] = mapped_column(String, nullable=True)
     auth_provider:Mapped[AuthProvider] = mapped_column(Enum(AuthProvider), nullable=False)
     firebase_uid:Mapped[String] = mapped_column(String, unique=True, nullable=True)
     status:Mapped[AccountStatus] = mapped_column(Enum(AccountStatus), nullable=False, default=AccountStatus.ACTIVE)
     role:Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False)
     profile_verification_complete:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
+    phone_number_verified:Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    must_change_password:Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")  # set while a temporary password is in use
+    token_version:Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")  # bumped to invalidate every token issued before
+    email_verified:Mapped[Boolean] = mapped_column(Boolean, nullable=False, default=False)
     last_login_at:Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -67,6 +73,23 @@ class Users(Base):
     mfa:Mapped["UserAuthMFA"] = relationship("UserAuthMFA", back_populates="user", uselist=False)
     otp_verifications:Mapped[list["OtpVerification"]] = relationship("OtpVerification", back_populates="user")
     reviewed_profiles:Mapped[list["MoreAboutUsers"]] = relationship("MoreAboutUsers", foreign_keys="[MoreAboutUsers.reviewer_id]", back_populates="reviewer")
+    agent_profile:Mapped[Optional["AgentProfiles"]] = relationship("AgentProfiles", foreign_keys="[AgentProfiles.user_id]", back_populates="user", uselist=False)
+
+# ============================================================
+# Agents: the people who verify client details. Simlexx creates them.
+# ============================================================
+
+class AgentProfiles(Base):
+    __tablename__ = "AgentProfiles"
+    id:Mapped[str] = mapped_column(String, primary_key=True, default=id_generator)
+    user_id:Mapped[str] = mapped_column(ForeignKey("Users.id"), unique=True, nullable=False)
+    first_name:Mapped[str] = mapped_column(String, nullable=False)
+    last_name:Mapped[str] = mapped_column(String, nullable=False)
+    job_title:Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    created_by:Mapped[Optional[str]] = mapped_column(ForeignKey("Users.id"), nullable=True)
+    created_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    user:Mapped["Users"] = relationship("Users", foreign_keys=[user_id], back_populates="agent_profile")
 
 class UserAuthMFA(Base):
     __tablename__ = "AuthMFAMethod"
@@ -84,9 +107,10 @@ class OtpVerification(Base):
     user_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), nullable=False)
     channel:Mapped[NotificationChannel] = mapped_column(Enum(NotificationChannel), nullable=False)
     code:Mapped[String] = mapped_column(String, nullable=False)
+    purpose:Mapped[OtpPurpose] = mapped_column(Enum(OtpPurpose), nullable=False)
     expires_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     verified_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
-    attempts:Mapped[Integer] = mapped_column(Integer, nullable=False, default=0)
+    attempts:Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     user:Mapped["Users"] = relationship("Users", back_populates="otp_verifications")
 
@@ -110,17 +134,18 @@ class MoreAboutUsers(Base):
     city_of_residence:Mapped[String] = mapped_column(String, nullable=False)
     full_address:Mapped[String] = mapped_column(String, nullable=False)
     profession:Mapped[String] = mapped_column(String, nullable=False)
-    document_type:Mapped[String] = mapped_column(String, nullable=False)
+    document_type:Mapped[DocumentType] = mapped_column(Enum(DocumentType), nullable=False)
     document_id:Mapped[String] = mapped_column(String, nullable=False)
-    document_link:Mapped[String] = mapped_column(String, nullable=False)
+    document_key:Mapped[str] = mapped_column(String, nullable=False)  # object key of the ID document in the private bucket
     document_expiry_date:Mapped[Date] = mapped_column(Date, nullable=False)
-    profile_picture:Mapped[String] = mapped_column(String, nullable=False)
+    profile_picture_key:Mapped[str] = mapped_column(String, nullable=False)  # object key of the profile picture
     profile_verification_complete:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
-    reviewer_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), nullable=True)
-    reviewed_by:Mapped[String] = mapped_column(String, nullable=True)  # name of the reviewer or organization
+    reviewer_id:Mapped[Optional[str]] = mapped_column(ForeignKey("Users.id"), nullable=True)
+    reviewed_by:Mapped[Optional[str]] = mapped_column(String, nullable=True)  # name of the reviewing agent
     reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_comment:Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # the reviewer's reason for approving or rejecting
     updated_at: Mapped[datetime] = mapped_column(
-                DateTime(timezone=True), server_default=func.now()
+                DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
                 )
     user:Mapped["Users"] = relationship("Users", foreign_keys=[user_id], back_populates="more_about_user")
     reviewer:Mapped["Users"] = relationship("Users", foreign_keys=[reviewer_id], back_populates="reviewed_profiles")
@@ -197,7 +222,7 @@ class Notifications(Base):
     type:Mapped[String] = mapped_column(String, nullable=False)
     content:Mapped[Text] = mapped_column(String, nullable=False)
     status:Mapped[NotificationStatus] = mapped_column(Enum(NotificationStatus), nullable=False, default=NotificationStatus.PENDING)
-    is_read:Mapped[Boolean] = mapped_column(Boolean, nullable=False, default=False)
+    is_read:Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     read_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     sent_at:Mapped[datetime] = mapped_column(
                     DateTime(timezone=True), server_default=func.now()
@@ -219,7 +244,7 @@ class Products(Base):
     currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)
     is_active:Mapped[Boolean] = mapped_column(Boolean, nullable=False, default=True)
     document_id:Mapped[String] = mapped_column(String, nullable=False)
-    document_link:Mapped[String] = mapped_column(String, nullable=False)
+    document_link:Mapped[str] = mapped_column(String, nullable=False)
     created_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     goals:Mapped[list["UserGoals"]] = relationship("UserGoals", back_populates="product")
@@ -233,5 +258,6 @@ class SystemLogs(Base):
     entity_id:Mapped[String] = mapped_column(String, nullable=True)
     description:Mapped[Text] = mapped_column(Text, nullable=True)
     ip_address:Mapped[String] = mapped_column(String, nullable=True)
+    endpoint:Mapped[String] = mapped_column(String, nullable=True)
     created_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     user:Mapped["Users"] = relationship("Users", back_populates="system_logs")

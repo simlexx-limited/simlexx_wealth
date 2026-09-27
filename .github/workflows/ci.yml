@@ -58,6 +58,12 @@ jobs:
       BUCKET_URL: ci-placeholder
       PATH_TO_FIREBASE: ci-placeholder
       FIREBASE_WEB_API: ci-placeholder
+      SECRET_ACCESS_KEY: ci-placeholder
+      ALGORITHM: HS256
+      SMTP_HOST: ci-placeholder
+      SMTP_USERNAME: ci-placeholder
+      SMTP_PASSWORD: ci-placeholder
+      SMTP_FROM_EMAIL: ci-placeholder@example.com
 
     steps:
       - uses: actions/checkout@v4
