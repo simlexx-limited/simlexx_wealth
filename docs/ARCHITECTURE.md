@@ -88,8 +88,8 @@ is emailed. The agent logs in at `email_auth/login` and must change it at
 | `/api/v1/auth/phone_auth/*` | anyone / signed in | register, confirm, login, OTP, reset, logout |
 | `/api/v1/auth/email_auth/*`, `/google_signin/*` | Firebase token | client register, email login |
 | `/api/v1/auth/password/change` | any signed-in (even on a temporary password) | change your password |
-| `/api/v1/more_about_user/*` | client, own profile only | `create` (multipart), `GET/PUT /{user_id}`. No delete |
-| `/api/v1/reviews/*` | agent | list (`?status=&page=&limit=`), get, decide (`PUT`, comment required) |
+| `/api/v1/more_about_user/*` | client, own profile only | `create` (multipart), `GET/PUT /{user_id}`, `GET /{user_id}/files` (fresh file links). No delete |
+| `/api/v1/reviews/*` | agent | list (`?status=&page=&limit=`, no file links), get, `GET /{user_id}/files` (fresh file links), decide (`PUT`, comment required) |
 | `/api/v1/simlexx/admin/*` | admin | `register` (first-run), `admins`, `agents` (create, list, get, `status`, `reset-password`) |
 | `/api/v1/reference/countries` | anyone | countries and which are served |
 
@@ -99,8 +99,7 @@ is emailed. The agent logs in at `email_auth/login` and must change it at
              ▲                               │
              └── client edits (any edit) ◄───┘   back to pending; the old comment stays visible
 
-- `create`/`PUT` take the ID document and picture as uploads (bucket keys are
-  `users/{user_id}/about/...` and `.../profile/...`).
+- `create`/`PUT` take the ID document and picture as uploads (see "Files" below).
 - The client cannot set status, reviewer, comment, or file links: those fields
   don't exist on the update schema.
 - A decision records the reviewer from their account (never the request), keeps
@@ -108,6 +107,30 @@ is emailed. The agent logs in at `email_auth/login` and must change it at
   `Users.profile_verification_complete`, and emails the client. If the email
   fails, the decision still stands. A reviewer can change an earlier decision
   and cannot review their own profile.
+
+### Files: a private bucket and signed links
+
+The R2 bucket is **private**. Nobody can open a file by its address; the server
+reads it with the R2 keys from `.env`.
+
+- `upload()` ([upload_to_cloudflare.py](../app/services/storage/upload_to_cloudflare.py))
+  stores the file and returns its **object key**, for example
+  `users/{user_id}/about/{user_id}_{random}.pdf`. The database keeps only the key
+  (`MoreAboutUsers.document_key`, `profile_picture_key`).
+- When a profile is returned, the server turns each key into a **temporary signed
+  link** ([signed_urls.py](../app/services/storage/signed_urls.py)), valid for
+  `SIGNED_URL_EXPIRE_SECONDS`. Signing is a local calculation, no request to R2.
+  The response keeps the field names `document_link` and `profile_picture`, adds
+  `links_expire_at`, and never shows the raw keys.
+- The agent's review **list has no links**: they exist only when one profile is
+  opened. To refresh links without reloading a profile (for example a background
+  refresh shortly before `links_expire_at`), call `GET .../{user_id}/files`.
+- Only keys made by `upload()` can be signed (`is_valid_key`), and no endpoint
+  accepts a key or link from a client, so nobody can get the server to sign
+  somebody else's file. Never log a signed link: it opens that file until it expires.
+- **One deployment step lives in Cloudflare, not in code:** the bucket must have
+  its public r2.dev URL turned off and no public custom domain, otherwise signed
+  links protect nothing.
 
 ## 6. Where things live
 
@@ -135,7 +158,8 @@ Session and security: `JWT_EXPIRE_MINUTES`, `ADMIN_JWT_EXPIRE_MINUTES`,
 `LOGIN_LOCKOUT_SECONDS`. Who can self-register: `SELF_REGISTRATION_ROLES`
 (should be just `User`). Countries: `SERVED_COUNTRIES`. Firebase:
 `PATH_TO_FIREBASE` (service-account JSON), `FIREBASE_WEB_API`. Email: `SMTP_*`.
-Uploads: `R2_*`, `BUCKET_URL`.
+Uploads: `R2_*` (account, keys, bucket, jurisdiction) and `SIGNED_URL_EXPIRE_SECONDS`
+(how long a signed file link lasts, default 900, at most 7 days).
 
 ## 8. Running, testing, migrating
 
@@ -175,8 +199,9 @@ Development OTPs: SMS is a placeholder that writes to
 
 ## 9. Not built yet / known gaps
 
-- **ID documents are world-readable URLs** (public bucket). Move to a private
-  bucket with short-lived signed URLs before real users upload IDs.
+- **Signed links haven't been checked against the real bucket yet** (tests sign
+  offline with dummy keys), and the bucket must be switched to private in
+  Cloudflare (see "Files").
 - **SMS is a placeholder** (`services/sms`); the real provider is undecided.
 - **No MFA** for admins or agents, only lockout and a shorter admin session.
 - **No way to deactivate an admin** (only agents). All admins are equal.

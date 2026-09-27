@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.database import get_session
 from app.model.mod_enum import UserAccountStatus
-from app.schema.more_about_user_schema import MoreAboutUserResponse
+from app.schema.more_about_user_schema import FileLinks, MoreAboutUserResponse, MoreAboutUserSummary
 from app.schema.review_schema import ReviewDecision, ReviewPage
 from app.services.auth.authorization import REVIEWER_ROLES, require_roles
 from app.services.rate_limiter.limiter import get_client_ip
@@ -27,12 +27,30 @@ async def list_profiles(
     token_payload:dict = Depends(require_roles(*REVIEWER_ROLES)),
     session:AsyncSession = Depends(get_session),
 ):
-    """Load client profiles, everything or one status at a time, a page at a time."""
+    """
+    Load client profiles, everything or one status at a time, a page at a time.
+    The list carries no file links; open one profile to get them.
+    """
     items, total = await ReviewService(session).list_profiles(status, page, limit)
     return ReviewPage(
-        items=[MoreAboutUserResponse.model_validate(item) for item in items],
+        items=[MoreAboutUserSummary.model_validate(item) for item in items],
         total=total, page=page, limit=limit,
     )
+
+
+@router.get("/{user_id}/files", response_model=FileLinks)
+async def get_file_links(
+    user_id:str,
+    token_payload:dict = Depends(require_roles(*REVIEWER_ROLES)),
+    session:AsyncSession = Depends(get_session),
+):
+    """
+    Fresh links to a client's ID document and profile picture, without reloading
+    the whole profile. The links stop working at links_expire_at, so an app can
+    call this in the background shortly before then.
+    """
+    profile = await ReviewService(session).get_profile(user_id)
+    return FileLinks.for_keys(str(profile.document_key), str(profile.profile_picture_key))
 
 
 @router.get("/{user_id}", response_model=MoreAboutUserResponse)
@@ -41,7 +59,7 @@ async def get_profile(
     token_payload:dict = Depends(require_roles(*REVIEWER_ROLES)),
     session:AsyncSession = Depends(get_session),
 ):
-    """Load one client's full profile."""
+    """Load one client's full profile, with fresh links to their files."""
     return await ReviewService(session).get_profile(user_id)
 
 

@@ -39,8 +39,8 @@ def make_profile(**overrides) -> SimpleNamespace:
         date_of_birth=datetime(1990, 5, 1), nationality="UG", country_of_residence="UG",
         city_of_residence="KAMPALA", full_address="plot 1", profession="ENGINEER",
         document_type=DocumentType.NATIONAL_ID, document_id="CM1",
-        document_link="https://files.example.com/doc.pdf", document_expiry_date=date(2030, 1, 1),
-        profile_picture="https://files.example.com/pic.png", profile_verification_complete=PENDING,
+        document_key="users/client1/about/doc.pdf", document_expiry_date=date(2030, 1, 1),
+        profile_picture_key="users/client1/profile/pic.png", profile_verification_complete=PENDING,
         reviewer_id=None, reviewed_by=None, reviewed_at=None, review_comment=None,
         updated_at=datetime.now(timezone.utc),
     )

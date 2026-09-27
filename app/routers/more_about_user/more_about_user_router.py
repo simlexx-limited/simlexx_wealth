@@ -17,7 +17,8 @@ from app.schema.more_about_user_schema import (
     MoreAboutUserCreate,
     MoreAboutUserUpdate,
     MoreAboutUserResponse,
-    UploadedURL,
+    FileLinks,
+    UploadedFile,
 )
 
 from app.services.storage.upload_to_cloudflare import upload, ALLOWED_IMAGE_EXTENSIONS
@@ -90,13 +91,13 @@ async def create_profile(
     await check_image_extension(id_document, allow_pdf=True)
     await check_image_extension(profile_picture)
 
-    document_link = UploadedURL.model_validate({"link": await upload(
+    document_file = UploadedFile.model_validate({"key": await upload(
         id_document,
         folder_name="about",
         username=user_id,
         allowed_extensions=ID_DOCUMENT_EXTENSIONS,
     )})
-    picture_link = UploadedURL.model_validate({"link": await upload(
+    picture_file = UploadedFile.model_validate({"key": await upload(
         profile_picture,
         folder_name="profile",
         username=user_id,
@@ -106,8 +107,8 @@ async def create_profile(
     return await service.create(
         user_id=user_id,
         data=data,
-        document_link=document_link,
-        profile_picture=picture_link,
+        document_file=document_file,
+        picture_file=picture_file,
     )
 
 
@@ -122,6 +123,22 @@ async def get_profile_by_user_id(
     """
     ensure_owner(token_payload, user_id)
     return await MoreAboutUserService(session).get_by_user_id(user_id=user_id)
+
+
+@router.get("/{user_id}/files", response_model=FileLinks)
+async def get_my_file_links(
+    user_id: str,
+    token_payload: dict = Depends(require_roles(UserRole.CLIENT)),
+    session: AsyncSession = Depends(get_session),
+):
+    """
+    Fresh links to your own ID document and profile picture, without reloading
+    the whole profile. The links stop working at links_expire_at, so an app can
+    call this in the background shortly before then.
+    """
+    ensure_owner(token_payload, user_id)
+    profile = await MoreAboutUserService(session).get_by_user_id(user_id=user_id)
+    return FileLinks.for_keys(str(profile.document_key), str(profile.profile_picture_key))
 
 
 @router.put("/{user_id}", response_model=MoreAboutUserResponse)
@@ -193,17 +210,17 @@ async def update_profile(
     if profile_picture is not None:
         await check_image_extension(profile_picture)
 
-    document_link = None
+    document_file = None
     if id_document is not None:
-        document_link = UploadedURL.model_validate({"link": await upload(
+        document_file = UploadedFile.model_validate({"key": await upload(
             id_document,
             folder_name="about",
             username=user_id,
             allowed_extensions=ID_DOCUMENT_EXTENSIONS,
         )})
-    picture_link = None
+    picture_file = None
     if profile_picture is not None:
-        picture_link = UploadedURL.model_validate({"link": await upload(
+        picture_file = UploadedFile.model_validate({"key": await upload(
             profile_picture,
             folder_name="profile",
             username=user_id,
@@ -211,5 +228,5 @@ async def update_profile(
         )})
 
     return await service.update(
-        user_id=user_id, data=data, document_link=document_link, profile_picture=picture_link
+        user_id=user_id, data=data, document_file=document_file, picture_file=picture_file
     )

@@ -13,7 +13,7 @@ from app.database.database import get_session
 from app.model.mod_enum import DocumentType, UserAccountStatus
 from app.routers.more_about_user import more_about_user_router as router_module
 from app.routers.more_about_user.more_about_user_router import router
-from app.schema.more_about_user_schema import MoreAboutUserCreate, UploadedURL
+from app.schema.more_about_user_schema import MoreAboutUserCreate, UploadedFile
 from app.services.auth.firebase_auth.auth_errors import (
     AuthError,
     DuplicateAccountError,
@@ -29,8 +29,9 @@ JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 64
 PDF = b"%PDF-1.7\n" + b"\x00" * 64
 TEXT = b"this is not an image, just some text"
 
-DOC_URL = "https://files.example.com/users/user123/about/user123_doc.pdf"
-PIC_URL = "https://files.example.com/users/user123/profile/user123_pic.png"
+DOC_KEY = "users/user123/about/user123_doc.pdf"
+PIC_KEY = "users/user123/profile/user123_pic.png"
+DUMMY_ENDPOINT = "https://test-account.r2.cloudflarestorage.com"   # see offline_signing in conftest.py
 
 
 def make_profile_payload(**overrides: Any) -> dict[str, Any]:
@@ -80,24 +81,24 @@ def served_countries(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# UploadedURL schema
+# UploadedFile schema: where an uploaded file lives in the private bucket
 # ---------------------------------------------------------------------------
 
-class TestUploadedURL:
-    def test_accepts_an_https_link(self):
-        assert str(UploadedURL(link=DOC_URL).link) == DOC_URL
+class TestUploadedFile:
+    def test_accepts_a_key_we_uploaded(self):
+        assert UploadedFile(key=DOC_KEY).key == DOC_KEY
 
-    def test_accepts_an_http_link(self):
-        assert str(UploadedURL(link="http://localhost:9000/users/u1/about/f.pdf").link).startswith("http://")
-
-    @pytest.mark.parametrize("bad", ["", "not a url", "files.example.com/x.pdf", "change-me-later/users/u/f.pdf"])
-    def test_rejects_things_that_are_not_urls(self, bad):
+    @pytest.mark.parametrize("bad", [
+        "", "not a key", "https://files.example.com/users/u1/about/f.pdf",
+        "/users/u1/about/f.pdf", "other/u1/about/f.pdf", "users/../secrets.txt", "users//u1/f.pdf",
+    ])
+    def test_rejects_anything_that_is_not_one_of_our_keys(self, bad):
         with pytest.raises(ValidationError):
-            UploadedURL(link=bad)
+            UploadedFile(key=bad)
 
-    def test_link_is_required(self):
+    def test_key_is_required(self):
         with pytest.raises(ValidationError):
-            UploadedURL()  # type: ignore[call-arg]
+            UploadedFile()  # type: ignore[call-arg]
 
 
 # ---------------------------------------------------------------------------
@@ -106,22 +107,22 @@ class TestUploadedURL:
 
 class TestServiceCreate:
     @pytest.mark.asyncio
-    async def test_creates_profile_with_the_uploaded_links(self, served_countries):
+    async def test_creates_profile_with_the_uploaded_keys(self, served_countries):
         session = make_session()
 
         profile = await MoreAboutUserService(session).create(
             user_id="user123",
             data=MoreAboutUserCreate(**make_profile_payload()),
-            document_link=UploadedURL(link=DOC_URL),
-            profile_picture=UploadedURL(link=PIC_URL),
+            document_file=UploadedFile(key=DOC_KEY),
+            picture_file=UploadedFile(key=PIC_KEY),
         )
 
         session.add.assert_called_once()
         session.commit.assert_awaited_once()
         assert profile.user_id == "user123"
-        assert profile.document_link == DOC_URL
-        assert profile.profile_picture == PIC_URL
-        assert isinstance(profile.document_link, str)
+        assert profile.document_key == DOC_KEY
+        assert profile.profile_picture_key == PIC_KEY
+        assert isinstance(profile.document_key, str)
         assert profile.document_type == DocumentType.NATIONAL_ID
         assert profile.country_of_residence == "UG"
         assert profile.profile_verification_complete == UserAccountStatus.PENDING
@@ -134,8 +135,8 @@ class TestServiceCreate:
             await MoreAboutUserService(session).create(
                 user_id="user123",
                 data=MoreAboutUserCreate(**make_profile_payload()),
-                document_link=UploadedURL(link=DOC_URL),
-                profile_picture=UploadedURL(link=PIC_URL),
+                document_file=UploadedFile(key=DOC_KEY),
+                picture_file=UploadedFile(key=PIC_KEY),
             )
 
         session.add.assert_not_called()
@@ -149,8 +150,8 @@ class TestServiceCreate:
             await MoreAboutUserService(session).create(
                 user_id="user123",
                 data=MoreAboutUserCreate(**make_profile_payload(country_of_residence="KE")),
-                document_link=UploadedURL(link=DOC_URL),
-                profile_picture=UploadedURL(link=PIC_URL),
+                document_file=UploadedFile(key=DOC_KEY),
+                picture_file=UploadedFile(key=PIC_KEY),
             )
 
         session.add.assert_not_called()
@@ -188,7 +189,7 @@ def api(monkeypatch, served_countries):
     app.dependency_overrides[get_session] = lambda: session
 
     async def fake_upload(file, folder_name, username, allowed_extensions=None):
-        return DOC_URL if folder_name == "about" else PIC_URL
+        return DOC_KEY if folder_name == "about" else PIC_KEY
 
     upload_mock = AsyncMock(side_effect=fake_upload)
     monkeypatch.setattr(router_module, "upload", upload_mock)
@@ -217,8 +218,12 @@ class TestCreateEndpoint:
         assert response.status_code == 201
         body = response.json()
         assert body["user_id"] == "user123"
-        assert body["document_link"] == DOC_URL
-        assert body["profile_picture"] == PIC_URL
+        # the bucket is private: the response carries temporary signed links, never the raw keys
+        assert body["document_link"].startswith(DUMMY_ENDPOINT) and DOC_KEY in body["document_link"]
+        assert body["profile_picture"].startswith(DUMMY_ENDPOINT) and PIC_KEY in body["profile_picture"]
+        assert "X-Amz-Signature=" in body["document_link"]
+        assert "document_key" not in body and "profile_picture_key" not in body
+        assert "links_expire_at" in body
         assert body["document_type"] == "national_id"
         assert body["profile_verification_complete"] == "pending"
         api.session.commit.assert_awaited_once()

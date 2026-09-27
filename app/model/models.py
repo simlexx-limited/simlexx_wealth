@@ -136,9 +136,9 @@ class MoreAboutUsers(Base):
     profession:Mapped[String] = mapped_column(String, nullable=False)
     document_type:Mapped[DocumentType] = mapped_column(Enum(DocumentType), nullable=False)
     document_id:Mapped[String] = mapped_column(String, nullable=False)
-    document_link:Mapped[str] = mapped_column(String, nullable=False)
+    document_key:Mapped[str] = mapped_column(String, nullable=False)  # object key of the ID document in the private bucket
     document_expiry_date:Mapped[Date] = mapped_column(Date, nullable=False)
-    profile_picture:Mapped[str] = mapped_column(String, nullable=False)
+    profile_picture_key:Mapped[str] = mapped_column(String, nullable=False)  # object key of the profile picture
     profile_verification_complete:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
     reviewer_id:Mapped[Optional[str]] = mapped_column(ForeignKey("Users.id"), nullable=True)
     reviewed_by:Mapped[Optional[str]] = mapped_column(String, nullable=True)  # name of the reviewing agent
