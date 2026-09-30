@@ -39,3 +39,13 @@ def ensure_owner(payload: dict, user_id: str) -> None:
     """Somebody may only act on their own profile."""
     if payload.get("user_id") != user_id:
         raise PermissionDeniedError("You can only access your own profile")
+
+
+def ensure_goal_owner(payload: dict, goal_user_id: str) -> None:
+    """
+    Somebody may only act on their own goal. Unlike ensure_owner, the id in the
+    URL (goal_id) is not the user's own id, so this takes the owning user_id off
+    an already-loaded goal - call it after fetching the row, not as a dependency.
+    """
+    if payload.get("user_id") != goal_user_id:
+        raise PermissionDeniedError("You can only access your own goal")
