@@ -41,6 +41,7 @@ def make_profile(**overrides) -> SimpleNamespace:
         document_type=DocumentType.NATIONAL_ID, document_id="CM1",
         document_key="users/client1/about/doc.pdf", document_expiry_date=date(2030, 1, 1),
         profile_picture_key="users/client1/profile/pic.png", profile_verification_complete=PENDING,
+        onboarding_complete=False,
         reviewer_id=None, reviewed_by=None, reviewed_at=None, review_comment=None,
         updated_at=datetime.now(timezone.utc),
     )
@@ -100,6 +101,21 @@ class TestDecide:
         assert profile.review_comment == "Because reasons"
         assert isinstance(profile.reviewed_at, datetime)
         session.commit.assert_awaited()
+
+    def test_approving_completes_onboarding(self, notify):
+        profile = make_profile()
+        decide(make_session(profile, client=client_account()), data=decision(APPROVED))
+        assert profile.onboarding_complete is True
+
+    def test_rejecting_does_not_complete_onboarding(self, notify):
+        profile = make_profile()
+        decide(make_session(profile, client=client_account()), data=decision(REJECTED, "ID expired"))
+        assert profile.onboarding_complete is False
+
+    def test_reversing_an_earlier_approval_to_a_rejection_undoes_onboarding_too(self, notify):
+        profile = make_profile(profile_verification_complete=APPROVED, onboarding_complete=True)
+        decide(make_session(profile, client=client_account()), data=decision(REJECTED, "actually incomplete"))
+        assert profile.onboarding_complete is False
 
     def test_the_reviewer_is_named_from_their_profile(self, notify):
         profile = make_profile()

@@ -126,6 +126,7 @@ class TestServiceCreate:
         assert profile.document_type == DocumentType.NATIONAL_ID
         assert profile.country_of_residence == "UG"
         assert profile.profile_verification_complete == UserAccountStatus.PENDING
+        assert profile.onboarding_complete is False   # only an agent's approval sets this
 
     @pytest.mark.asyncio
     async def test_duplicate_profile_is_rejected_and_nothing_is_saved(self, served_countries):

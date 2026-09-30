@@ -80,6 +80,7 @@ class MoreAboutUserService:
             document_key=document_file.key,
             document_expiry_date=data.document_expiry_date,
             profile_picture_key=picture_file.key,
+            onboarding_complete=False,  # only an agent's approval (see ReviewService.decide) sets this
         )
         self.session.add(profile)
         await self.session.commit()
@@ -186,6 +187,7 @@ class MoreAboutUserService:
         if profile.profile_verification_complete == UserAccountStatus.PENDING:
             return
         profile.profile_verification_complete = UserAccountStatus.PENDING
+        profile.onboarding_complete = False  # was only true because an agent had approved it
         user = await self.session.get(Users, profile.user_id)
         if user is not None:
             user.profile_verification_complete = UserAccountStatus.PENDING

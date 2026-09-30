@@ -75,6 +75,7 @@ def make_profile_row(user_id: str = "user123") -> SimpleNamespace:
         document_expiry_date=date(2030, 1, 1),
         profile_picture_key="users/user123/profile/pic.png",
         profile_verification_complete=UserAccountStatus.PENDING,
+        onboarding_complete=False,
         reviewer_id=None, reviewed_by=None, reviewed_at=None, review_comment=None,
         updated_at=datetime.now(timezone.utc),
     )
@@ -275,6 +276,7 @@ class TestEditingReopensTheReview:
     @pytest.mark.parametrize("decided", [UserAccountStatus.APPROVED, UserAccountStatus.REJECTED])
     def test_editing_a_decided_profile_sends_it_back_to_pending(self, api, decided):
         api.profile.profile_verification_complete = decided
+        api.profile.onboarding_complete = decided == UserAccountStatus.APPROVED
         api.profile.review_comment = "earlier reason"
 
         response = api.client.put(BASE + "/user123", headers=auth("user123", CLIENT), data={"first_name": "Bob"})
@@ -283,6 +285,7 @@ class TestEditingReopensTheReview:
         assert api.profile.profile_verification_complete == UserAccountStatus.PENDING
         assert response.json()["profile_verification_complete"] == "pending"
         assert api.profile.review_comment == "earlier reason"   # stays visible until the next decision
+        assert api.profile.onboarding_complete is False   # only a fresh approval sets this again
 
     def test_the_users_own_status_follows(self, api):
         api.profile.profile_verification_complete = UserAccountStatus.REJECTED
@@ -300,8 +303,10 @@ class TestEditingReopensTheReview:
 
     def test_a_rejected_request_does_not_reopen_anything(self, api):
         api.profile.profile_verification_complete = UserAccountStatus.APPROVED
+        api.profile.onboarding_complete = True
         api.client.put(BASE + "/user123", headers=auth("user123", CLIENT), data={"country_of_residence": "KE"})
         assert api.profile.profile_verification_complete == UserAccountStatus.APPROVED
+        assert api.profile.onboarding_complete is True
 
 
 class TestUpdateFiles:
