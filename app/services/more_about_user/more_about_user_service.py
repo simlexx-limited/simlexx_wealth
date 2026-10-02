@@ -77,9 +77,9 @@ class MoreAboutUserService:
             profession=data.profession,
             document_type=data.document_type,
             document_id=data.document_id,
-            document_key=document_file.key,
+            document_keys=[document_file.key],
             document_expiry_date=data.document_expiry_date,
-            profile_picture_key=picture_file.key,
+            profile_picture_keys=[picture_file.key],
             onboarding_complete=False,  # only an agent's approval (see ReviewService.decide) sets this
         )
         self.session.add(profile)
@@ -136,13 +136,17 @@ class MoreAboutUserService:
     ) -> MoreAboutUsers:
         """
         Partially update the profile that belongs to user_id: the personal
-        details given in data, and/or replacement files (already uploaded).
+        details given in data, and/or new files (already uploaded).
 
-        Only what was actually sent is written. Editing a profile that has
-        already been decided (approved or rejected) puts it back to pending, so a
-        reviewer looks at the new details - which is also how a rejected client
-        asks for another review. The reviewer's earlier comment stays visible
-        until the next decision.
+        Only what was actually sent is written. Unlike an account's proof
+        document, a new ID document or profile picture is appended to the
+        existing history, never overwrites it - a reviewer needs every version
+        the client has ever submitted to tell a genuine resubmission from the
+        same file sent in twice. Editing a profile that has already been
+        decided (approved or rejected) puts it back to pending, so a reviewer
+        looks at the new details - which is also how a rejected client asks
+        for another review. The reviewer's earlier comment stays visible until
+        the next decision.
 
         Raises the same errors as check_can_update.
         """
@@ -153,9 +157,9 @@ class MoreAboutUserService:
         for field, value in self._changes(data).items():
             setattr(profile, field, value)
         if document_file is not None:
-            profile.document_key = document_file.key
+            profile.document_keys = [*profile.document_keys, document_file.key]
         if picture_file is not None:
-            profile.profile_picture_key = picture_file.key
+            profile.profile_picture_keys = [*profile.profile_picture_keys, picture_file.key]
 
         await self._reopen_review(profile)
 

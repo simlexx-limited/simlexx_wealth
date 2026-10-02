@@ -71,9 +71,9 @@ def make_profile_row(user_id: str = "user123") -> SimpleNamespace:
         middle_name=None, date_of_birth=datetime(1990, 5, 1), nationality="UG",
         country_of_residence="UG", city_of_residence="KAMPALA", full_address="plot 1",
         profession="ENGINEER", document_type=DocumentType.NATIONAL_ID,
-        document_id="CM123", document_key="users/user123/about/doc.pdf",
+        document_id="CM123", document_keys=["users/user123/about/doc.pdf"],
         document_expiry_date=date(2030, 1, 1),
-        profile_picture_key="users/user123/profile/pic.png",
+        profile_picture_keys=["users/user123/profile/pic.png"],
         profile_verification_complete=UserAccountStatus.PENDING,
         onboarding_complete=False,
         reviewer_id=None, reviewed_by=None, reviewed_at=None, review_comment=None,
@@ -242,8 +242,8 @@ class TestUpdateProfile:
             "profile_picture_link": "https://evil.example.com/y.png",
             # the stored keys can't be set either: otherwise a client could get the
             # server to sign somebody else's file
-            "document_key": "users/victim/about/secret.pdf",
-            "profile_picture_key": "users/victim/profile/secret.png",
+            "document_keys": ["users/victim/about/secret.pdf"],
+            "profile_picture_keys": ["users/victim/profile/secret.png"],
         })
 
         assert response.status_code == 200
@@ -251,8 +251,8 @@ class TestUpdateProfile:
         assert api.profile.profile_verification_complete == UserAccountStatus.PENDING
         assert api.profile.review_comment is None
         assert api.profile.reviewer_id is None and api.profile.reviewed_by is None
-        assert api.profile.document_key == "users/user123/about/doc.pdf"
-        assert api.profile.profile_picture_key == "users/user123/profile/pic.png"
+        assert api.profile.document_keys == ["users/user123/about/doc.pdf"]
+        assert api.profile.profile_picture_keys == ["users/user123/profile/pic.png"]
 
     def test_residence_must_still_be_a_served_country(self, api):
         assert self.put(api, data={"country_of_residence": "KE"}).status_code == 403
@@ -313,17 +313,18 @@ class TestUpdateFiles:
     def put(self, api, files, data=None):
         return api.client.put(BASE + "/user123", headers=auth("user123", CLIENT), data=data or {}, files=files)
 
-    def test_a_new_document_replaces_the_stored_key(self, api, uploads):
+    def test_a_new_document_is_appended_to_the_history_not_replaced(self, api, uploads):
+        """A reviewer needs every version submitted, to catch the same file being resent."""
         response = self.put(api, {"id_document": ("id.pdf", PDF, "application/pdf")})
         assert response.status_code == 200
-        assert api.profile.document_key == "users/user123/about/new.bin"
-        assert api.profile.profile_picture_key == "users/user123/profile/pic.png"
+        assert api.profile.document_keys == ["users/user123/about/doc.pdf", "users/user123/about/new.bin"]
+        assert api.profile.profile_picture_keys == ["users/user123/profile/pic.png"]   # untouched
         assert uploads.await_args.kwargs["folder_name"] == "about" and uploads.await_args.kwargs["username"] == "user123"
 
-    def test_a_new_picture_replaces_the_stored_key(self, api, uploads):
+    def test_a_new_picture_is_appended_to_the_history_not_replaced(self, api, uploads):
         self.put(api, {"profile_picture": ("me.png", PNG, "image/png")})
-        assert api.profile.profile_picture_key == "users/user123/profile/new.bin"
-        assert api.profile.document_key == "users/user123/about/doc.pdf"
+        assert api.profile.profile_picture_keys == ["users/user123/profile/pic.png", "users/user123/profile/new.bin"]
+        assert api.profile.document_keys == ["users/user123/about/doc.pdf"]   # untouched
 
     def test_files_alone_count_as_an_update_and_reopen_the_review(self, api, uploads):
         api.profile.profile_verification_complete = UserAccountStatus.REJECTED
@@ -334,7 +335,7 @@ class TestUpdateFiles:
         response = self.put(api, {"id_document": ("evil.exe", b"MZ" + b"\x00" * 32, "application/octet-stream")})
         assert response.status_code in (400, 413, 415)
         uploads.assert_not_awaited()
-        assert api.profile.document_key == "users/user123/about/doc.pdf"
+        assert api.profile.document_keys == ["users/user123/about/doc.pdf"]   # nothing appended
 
     def test_a_pdf_is_not_a_valid_profile_picture(self, api, uploads):
         response = self.put(api, {"profile_picture": ("me.pdf", PDF, "application/pdf")})

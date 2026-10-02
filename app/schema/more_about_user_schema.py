@@ -92,23 +92,26 @@ class MoreAboutUserSummary(BaseModel):
 
 class MoreAboutUserResponse(MoreAboutUserSummary):
     """
-    A full profile. The files are in a private bucket, so document_link and
-    profile_picture are temporary signed links, made fresh each time a response
-    is built and valid until links_expire_at. The stored object keys are
-    never part of a response.
+    A full profile. document_link and profile_picture are temporary signed
+    links to the most recently uploaded file, made fresh each time a response
+    is built and valid until links_expire_at. Every file ever uploaded is kept
+    (see document_keys/profile_picture_keys on the model) so a reviewer can
+    tell a genuine resubmission from the same file sent twice - but only the
+    latest one is ever linked here. The stored object keys are never part of
+    a response.
     """
-    document_key: str = Field(exclude=True)
-    profile_picture_key: str = Field(exclude=True)
+    document_keys: list[str] = Field(exclude=True)
+    profile_picture_keys: list[str] = Field(exclude=True)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def document_link(self) -> str:
-        return sign_key(self.document_key)
+        return sign_key(self.document_keys[-1])
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def profile_picture(self) -> str:
-        return sign_key(self.profile_picture_key)
+        return sign_key(self.profile_picture_keys[-1])
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -124,6 +127,7 @@ class FileLinks(BaseModel):
 
     @classmethod
     def for_keys(cls, document_key: str, profile_picture_key: str) -> "FileLinks":
+        """document_key/profile_picture_key: the most recent key from each history."""
         return cls(
             document_link=sign_key(document_key),
             profile_picture=sign_key(profile_picture_key),
