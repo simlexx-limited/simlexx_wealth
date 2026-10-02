@@ -138,7 +138,7 @@ async def get_my_file_links(
     """
     ensure_owner(token_payload, user_id)
     profile = await MoreAboutUserService(session).get_by_user_id(user_id=user_id)
-    return FileLinks.for_keys(str(profile.document_key), str(profile.profile_picture_key))
+    return FileLinks.for_keys(profile.document_keys[-1], profile.profile_picture_keys[-1])
 
 
 @router.put("/{user_id}", response_model=MoreAboutUserResponse)

@@ -82,6 +82,10 @@ class UnsupportedCountryError(AuthError):
     status_code = 403
     detail = "Simlexx is not yet available in your country of residence"
 
+class ProductNotFoundError(AuthError):
+    status_code = 404
+    detail = "No such product"
+
 async def auth_error_handler(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, AuthError)
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})

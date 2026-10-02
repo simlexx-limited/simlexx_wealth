@@ -71,9 +71,11 @@ class ReviewService:
         An earlier decision can be changed. Who decided and when come from the
         reviewer's account and the server clock; the
         previous status and this comment are kept in the audit log. The client's
-        account status is kept in step, and they get an in-app notification and,
-        if they have an email address, an email. If the email can't be queued the
-        decision still stands.
+        account status is kept in step, onboarding_complete becomes true only on
+        approval (and reverts to false if a decision is later changed to
+        rejected), and they get an in-app notification and, if they have an
+        email address, an email. If the email can't be queued the decision
+        still stands.
         """
         reviewer_id = reviewer["user_id"]
         if reviewer_id == user_id:
@@ -83,6 +85,7 @@ class ReviewService:
         previous = profile.profile_verification_complete
 
         profile.profile_verification_complete = data.decision
+        profile.onboarding_complete = data.decision == UserAccountStatus.APPROVED
         profile.reviewer_id = reviewer_id
         profile.reviewed_by = await self.reviewer_label(reviewer_id)
         profile.reviewed_at = datetime.now(timezone.utc)

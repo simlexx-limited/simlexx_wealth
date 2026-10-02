@@ -126,8 +126,8 @@ def profile_row(**overrides) -> SimpleNamespace:
         id="p1", user_id="client1", first_name="Test", last_name="Client", middle_name=None,
         date_of_birth=datetime(1990, 5, 1), nationality="UG", country_of_residence="UG",
         city_of_residence="KAMPALA", full_address="plot 1", profession="ENGINEER",
-        document_type=DocumentType.NATIONAL_ID, document_id="CM1", document_key=DOC,
-        document_expiry_date=datetime(2030, 1, 1).date(), profile_picture_key=PIC,
+        document_type=DocumentType.NATIONAL_ID, document_id="CM1", document_keys=[DOC],
+        document_expiry_date=datetime(2030, 1, 1).date(), profile_picture_keys=[PIC],
         profile_verification_complete=UserAccountStatus.PENDING, reviewer_id=None, reviewed_by=None,
         reviewed_at=None, review_comment=None, updated_at=datetime.now(timezone.utc),
     )
@@ -144,24 +144,24 @@ class TestResponseSchemas:
 
     def test_the_raw_keys_are_never_in_a_response(self):
         body = MoreAboutUserResponse.model_validate(profile_row()).model_dump(mode="json")
-        assert "document_key" not in body and "profile_picture_key" not in body
+        assert "document_keys" not in body and "profile_picture_keys" not in body
         # ...and the only place a key appears is inside the signed link's path
         flat = str({k: v for k, v in body.items() if k not in ("document_link", "profile_picture")})
         assert DOC not in flat and PIC not in flat
 
     def test_the_openapi_schema_does_not_offer_the_keys_either(self):
         schema = MoreAboutUserResponse.model_json_schema(mode="serialization")
-        assert "document_key" not in schema["properties"]
+        assert "document_keys" not in schema["properties"]
         assert {"document_link", "profile_picture", "links_expire_at"} <= set(schema["properties"])
 
     def test_the_summary_has_no_links_at_all(self):
         body = MoreAboutUserSummary.model_validate(profile_row()).model_dump(mode="json")
-        assert not {"document_link", "profile_picture", "links_expire_at", "document_key", "profile_picture_key"} & set(body)
+        assert not {"document_link", "profile_picture", "links_expire_at", "document_keys", "profile_picture_keys"} & set(body)
         assert body["user_id"] == "client1" and body["nationality_name"] == "Uganda"
 
     def test_a_row_still_holding_an_old_public_url_is_not_signed(self):
         """Old rows must be migrated: a stored URL is refused, not silently signed."""
-        row = profile_row(document_key="https://pub.r2.dev/users/client1/about/x.pdf")
+        row = profile_row(document_keys=["https://pub.r2.dev/users/client1/about/x.pdf"])
         with pytest.raises(ValueError):
             MoreAboutUserResponse.model_validate(row).model_dump(mode="json")
 
@@ -241,9 +241,9 @@ class TestFileLinkEndpoints:
 
         single = client.get(f"{BASE_REVIEWS}/client1", headers=gate.agent()).json()
         assert "X-Amz-Signature" in single["document_link"] and "X-Amz-Signature" in single["profile_picture"]
-        assert "document_key" not in single
+        assert "document_keys" not in single
 
     def test_a_clients_own_profile_has_links_too(self, client, gate):
         body = client.get(f"{BASE_CLIENT}/client1", headers=gate.headers("client1", UserRole.CLIENT)).json()
         assert "X-Amz-Signature" in body["document_link"] and "links_expire_at" in body
-        assert "document_key" not in body and "profile_picture_key" not in body
+        assert "document_keys" not in body and "profile_picture_keys" not in body

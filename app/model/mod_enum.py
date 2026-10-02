@@ -49,6 +49,17 @@ class TransactionStatus(str, PyEnum):
     COMPLETED = "completed"
     FAILED = "failed"
 
+class SavingFrequency(str, PyEnum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+class IncomeFrequency(str, PyEnum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    VARIES = "varies"
+
 class GoalStatus(str, PyEnum):
     ONGOING = "ongoing"
     COMPLETED = "completed"

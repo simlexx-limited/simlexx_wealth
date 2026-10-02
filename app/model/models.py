@@ -18,7 +18,9 @@ from app.model.mod_enum import (
     NotificationStatus,
     CurrencyType,
     OtpPurpose,
-    DocumentType
+    DocumentType,
+    IncomeFrequency,
+    SavingFrequency
     )
 from sqlalchemy import (
     Float,
@@ -31,9 +33,10 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
-    Date
+    Date,
+    UniqueConstraint
     )
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 
 
 # ============================================================
@@ -65,9 +68,10 @@ class Users(Base):
             DateTime(timezone=True), server_default=func.now()
         )
     more_about_user:Mapped["MoreAboutUsers"] = relationship("MoreAboutUsers", foreign_keys="[MoreAboutUsers.user_id]", back_populates="user", uselist=False)
-    user_account:Mapped["UserAccount"] = relationship("UserAccount", back_populates="user", uselist=False)
+    user_accounts:Mapped[list["UserAccount"]] = relationship("UserAccount", back_populates="user")
     transactions:Mapped[list["Transaction"]] = relationship("Transaction", back_populates="user")
     goals:Mapped[list["UserGoals"]] = relationship("UserGoals", back_populates="user")
+    goal_recommendations:Mapped[list["GoalRecommendations"]] = relationship("GoalRecommendations", back_populates="user")
     notifications:Mapped[list["Notifications"]] = relationship("Notifications", back_populates="user")
     system_logs:Mapped[list["SystemLogs"]] = relationship("SystemLogs", back_populates="user")
     mfa:Mapped["UserAuthMFA"] = relationship("UserAuthMFA", back_populates="user", uselist=False)
@@ -136,10 +140,11 @@ class MoreAboutUsers(Base):
     profession:Mapped[String] = mapped_column(String, nullable=False)
     document_type:Mapped[DocumentType] = mapped_column(Enum(DocumentType), nullable=False)
     document_id:Mapped[String] = mapped_column(String, nullable=False)
-    document_key:Mapped[str] = mapped_column(String, nullable=False)  # object key of the ID document in the private bucket
+    document_keys:Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)  # every ID document ever uploaded, oldest first - appended to, never overwritten, so a reviewer can tell a genuine resubmission from the same file sent twice
     document_expiry_date:Mapped[Date] = mapped_column(Date, nullable=False)
-    profile_picture_key:Mapped[str] = mapped_column(String, nullable=False)  # object key of the profile picture
+    profile_picture_keys:Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)  # same append-only history as document_keys
     profile_verification_complete:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
+    onboarding_complete:Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)  # has the user finished onboarding (distinct from profile_verification_complete, the reviewer's decision)
     reviewer_id:Mapped[Optional[str]] = mapped_column(ForeignKey("Users.id"), nullable=True)
     reviewed_by:Mapped[Optional[str]] = mapped_column(String, nullable=True)  # name of the reviewing agent
     reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -153,10 +158,14 @@ class MoreAboutUsers(Base):
 
 class UserAccount(Base):
     __tablename__ = "UserAccount"
+    __table_args__ = (
+        # account numbers are only guaranteed unique within one bank, not across all banks
+        UniqueConstraint('bank_name', 'account_number', name='uq_UserAccount_bank_account_number'),
+    )
     id:Mapped[String] = mapped_column(String, primary_key=True, unique=True, default=id_generator)
-    user_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), unique=True, nullable=False)
+    user_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), nullable=False)  # not unique: a client may link more than one account
     bank_name:Mapped[String] = mapped_column(String, nullable=False)
-    account_number:Mapped[String] = mapped_column(String, nullable=False)
+    account_number:Mapped[String] = mapped_column(String, nullable=False)  # unique together with bank_name, see __table_args__
     balance:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=False, default=0)
     currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)
     account_document_id:Mapped[String] = mapped_column(String, nullable=True)
@@ -167,7 +176,7 @@ class UserAccount(Base):
     updated_at: Mapped[datetime] = mapped_column(
                     DateTime(timezone=True), server_default=func.now()
                     )
-    user:Mapped["Users"] = relationship("Users", back_populates="user_account")
+    user:Mapped["Users"] = relationship("Users", back_populates="user_accounts")
     transactions:Mapped[list["Transaction"]] = relationship("Transaction", back_populates="account")
 
 class UserGoals(Base):
@@ -180,8 +189,8 @@ class UserGoals(Base):
     currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)
     target_date:Mapped[Date] = mapped_column(Date, nullable=False)
     purpose:Mapped[Text] = mapped_column(Text, nullable=False)
+    income_regularity:Mapped[IncomeFrequency] = mapped_column(Enum(IncomeFrequency), nullable=False)  # snapshot of the client's income pattern when this goal was created; never edited afterward
     goal_status:Mapped[GoalStatus] = mapped_column(Enum(GoalStatus), nullable=False, default=GoalStatus.ONGOING)
-    onboarding_complete:Mapped[Boolean] = mapped_column(Boolean, nullable=False, default=False)
     created_at:Mapped[datetime] = mapped_column(
                         DateTime(timezone=True), server_default=func.now()
                         )
@@ -190,6 +199,29 @@ class UserGoals(Base):
                         )
     user:Mapped["Users"] = relationship("Users", back_populates="goals")
     product:Mapped["Products"] = relationship("Products", back_populates="goals")
+    recommendation:Mapped[Optional["GoalRecommendations"]] = relationship("GoalRecommendations", back_populates="goal", uselist=False)
+
+class GoalRecommendations(Base):
+    """
+    One row per saving-technique recommendation the financial agent generates.
+    Append-only: a recommendation is written once, at generation time, and
+    never edited afterward - it's the durable record of what the agent said,
+    not a live value. Runs before the goal exists (goal_id starts NULL) and is
+    attached once the goal is actually created; unique enforces at most one
+    recommendation per goal (cost control - no recompute once attached).
+    """
+    __tablename__ = "GoalRecommendations"
+    id:Mapped[String] = mapped_column(String, primary_key=True, default=id_generator)
+    user_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), nullable=False)
+    goal_id:Mapped[Optional[str]] = mapped_column(ForeignKey("UserGoals.id"), nullable=True, unique=True)
+    saving_amount_recommended:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=False)
+    currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)
+    frequency:Mapped[SavingFrequency] = mapped_column(Enum(SavingFrequency), nullable=False)
+    reason:Mapped[Text] = mapped_column(Text, nullable=False)
+    alternatives:Mapped[Optional[list[dict]]] = mapped_column(JSONB, nullable=True)  # up to 2 AlternativeSavingStrategy, already validated before being written
+    created_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    user:Mapped["Users"] = relationship("Users", back_populates="goal_recommendations")
+    goal:Mapped[Optional["UserGoals"]] = relationship("UserGoals", back_populates="recommendation")
 
 class Transaction(Base):
     __tablename__ = "transactions"
