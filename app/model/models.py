@@ -33,7 +33,8 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
-    Date
+    Date,
+    UniqueConstraint
     )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 
@@ -67,7 +68,7 @@ class Users(Base):
             DateTime(timezone=True), server_default=func.now()
         )
     more_about_user:Mapped["MoreAboutUsers"] = relationship("MoreAboutUsers", foreign_keys="[MoreAboutUsers.user_id]", back_populates="user", uselist=False)
-    user_account:Mapped["UserAccount"] = relationship("UserAccount", back_populates="user", uselist=False)
+    user_accounts:Mapped[list["UserAccount"]] = relationship("UserAccount", back_populates="user")
     transactions:Mapped[list["Transaction"]] = relationship("Transaction", back_populates="user")
     goals:Mapped[list["UserGoals"]] = relationship("UserGoals", back_populates="user")
     goal_recommendations:Mapped[list["GoalRecommendations"]] = relationship("GoalRecommendations", back_populates="user")
@@ -139,9 +140,9 @@ class MoreAboutUsers(Base):
     profession:Mapped[String] = mapped_column(String, nullable=False)
     document_type:Mapped[DocumentType] = mapped_column(Enum(DocumentType), nullable=False)
     document_id:Mapped[String] = mapped_column(String, nullable=False)
-    document_key:Mapped[str] = mapped_column(String, nullable=False)  # object key of the ID document in the private bucket
+    document_keys:Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)  # every ID document ever uploaded, oldest first - appended to, never overwritten, so a reviewer can tell a genuine resubmission from the same file sent twice
     document_expiry_date:Mapped[Date] = mapped_column(Date, nullable=False)
-    profile_picture_key:Mapped[str] = mapped_column(String, nullable=False)  # object key of the profile picture
+    profile_picture_keys:Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)  # same append-only history as document_keys
     profile_verification_complete:Mapped[UserAccountStatus] = mapped_column(Enum(UserAccountStatus), nullable=False, default=UserAccountStatus.PENDING)
     onboarding_complete:Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)  # has the user finished onboarding (distinct from profile_verification_complete, the reviewer's decision)
     reviewer_id:Mapped[Optional[str]] = mapped_column(ForeignKey("Users.id"), nullable=True)
@@ -157,10 +158,14 @@ class MoreAboutUsers(Base):
 
 class UserAccount(Base):
     __tablename__ = "UserAccount"
+    __table_args__ = (
+        # account numbers are only guaranteed unique within one bank, not across all banks
+        UniqueConstraint('bank_name', 'account_number', name='uq_UserAccount_bank_account_number'),
+    )
     id:Mapped[String] = mapped_column(String, primary_key=True, unique=True, default=id_generator)
-    user_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), unique=True, nullable=False)
+    user_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), nullable=False)  # not unique: a client may link more than one account
     bank_name:Mapped[String] = mapped_column(String, nullable=False)
-    account_number:Mapped[String] = mapped_column(String, nullable=False)
+    account_number:Mapped[String] = mapped_column(String, nullable=False)  # unique together with bank_name, see __table_args__
     balance:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=False, default=0)
     currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)
     account_document_id:Mapped[String] = mapped_column(String, nullable=True)
@@ -171,7 +176,7 @@ class UserAccount(Base):
     updated_at: Mapped[datetime] = mapped_column(
                     DateTime(timezone=True), server_default=func.now()
                     )
-    user:Mapped["Users"] = relationship("Users", back_populates="user_account")
+    user:Mapped["Users"] = relationship("Users", back_populates="user_accounts")
     transactions:Mapped[list["Transaction"]] = relationship("Transaction", back_populates="account")
 
 class UserGoals(Base):
