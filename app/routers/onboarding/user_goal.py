@@ -69,7 +69,9 @@ async def optain_rec_goal(
     token_payload:dict = Depends(require_roles(UserRole.CLIENT)),
     session:AsyncSession = Depends(get_session)
     ):
-    pass
+    return await UserGoalManagement(session).get_goal_recommendation(
+        user_goal=user_goal, user_id=token_payload["user_id"]
+    )
 
 @router.post("/goal/create", response_model=UserGoalResponse, status_code=201)
 async def create_goal(
