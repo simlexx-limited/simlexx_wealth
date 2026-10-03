@@ -8,8 +8,8 @@ from google.genai.types import Content, Part
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 
-from app.agent.llm.llm_definition import LLMDefinition
-from app.agent.prompts.recommender import instructions, prompts
+from app.ai_agents.llm.llm_definition import LLMDefinition
+from app.ai_agents.prompts.recommender import instructions, prompts
 from app.config.setting import get_settings
 
 REPO_ROOT = Path(__file__).parent.parent.parent
@@ -70,7 +70,7 @@ class Agents:
 
         return final_text
 
-    async def run(self, user_id:str, agent_name:str = "learning_llm") -> str:
+    async def run(self, user_id:str, agent_name:str) -> str:
         """Build the agent once and run one turn with the configured prompt,
         returning the final response text. Retries the same model a few
         times on a transient failure (rate limit, connection error, etc.)."""

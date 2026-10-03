@@ -12,7 +12,7 @@ from google.genai.types import (
     )
 
 from app.config.setting import get_settings
-from app.schema.user_goal import SavingRecommendation
+from app.ai_agents.schemas.recommendation_explanation import RecommendationExplanation
 
 os.environ.setdefault(
     "ADK_SUPPRESS_GEMINI_LITELLM_WARNINGS",
@@ -62,5 +62,5 @@ class LLMDefinition:
         return self.llm_definition(
             agent_name=agent_name,
             tools=[],
-            output_schema=SavingRecommendation
+            output_schema=RecommendationExplanation
         )
