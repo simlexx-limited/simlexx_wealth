@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.model.models import Products, Users, UserGoals
+from app.model.models import GoalRecommendations, Products, Users, UserGoals
 from app.model.mod_enum import GoalStatus, NotificationChannel
 from app.schema.user_goal import UserGoalCreate, SavingRecommendation, UserGoalUpdate
 from app.services.auth.firebase_auth.auth_errors import (
@@ -15,6 +15,7 @@ from app.services.auth.firebase_auth.auth_errors import (
 )
 from app.services.logs.system_log_service import SystemLogService
 from app.services.notifications.notification_service import NotificationService
+from app.ai_agents.orchestrator.orchestrator import orchestrator
 
 # A goal is "active" while the user is still working toward it. COMPLETED and
 # TERMINATED are its two end states.
@@ -24,6 +25,32 @@ ACTIVE_STATUSES = (GoalStatus.ONGOING, GoalStatus.REOPENED)
 class UserGoalManagement:
     def __init__(self, session:AsyncSession):
         self.db_session = session
+
+    async def get_goal_recommendation(self,
+                                      user_goal:UserGoalCreate,
+                                      user_id:str,
+                                      ip_address:Optional[str]=None,
+                                      endpoint:str = ""
+                                      ):
+        product = await self.get_chosen_product(user_goal.product_id)
+        result = await orchestrator().recommendation(
+            user_id=user_id,
+            user_goal=user_goal,
+            product=product
+        )
+        self.db_session.add(GoalRecommendations(
+            user_id=user_id,
+            request=user_goal.model_dump(mode="json"),
+            saving_amount_recommended=result.saving_amount_recommended,
+            currency=result.currency,
+            frequency=result.frequency,
+            reason=result.reason,
+            alternatives=[alt.model_dump(mode="json") for alt in result.alternatives] if result.alternatives else None,
+        ))
+        await self.db_session.commit()
+        return result
+        
+
 
     async def get_all_goals(
         self,
@@ -75,6 +102,15 @@ class UserGoalManagement:
             raise AccountNotFoundError(detail="No goal found for this user.")
         return goal
 
+    async def get_chosen_product(self, product_id:Optional[str]) -> Optional[Products]:
+        if product_id is None:
+            return None
+        result = await self.db_session.execute(select(Products).where(Products.id == product_id))
+        product = result.scalar_one_or_none()
+        if product is None:
+            raise ProductNotFoundError()
+        return product
+
     async def ensure_product_exists(self, product_id:Optional[str]) -> None:
         """No check needed when no product was chosen; otherwise it must be real."""
         if product_id is None:
@@ -112,6 +148,7 @@ class UserGoalManagement:
             purpose=user_goal.purpose,
             goal_status=GoalStatus.ONGOING,
             income_regularity=user_goal.income_regularity,
+            minimum_income=user_goal.minimum_income,
         )
         self.db_session.add(new_goal)
         await self.db_session.commit()

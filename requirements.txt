@@ -35,8 +35,8 @@ python-multipart
 # --- Environment ---
 python-dotenv
 
-# agent development kit
-google-adk
+# agent development kit (the [extensions] extra is required for LiteLlm support)
+google-adk[extensions]==2.10.0
 
 # background & caching
 celery

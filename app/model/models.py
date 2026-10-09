@@ -190,6 +190,7 @@ class UserGoals(Base):
     target_date:Mapped[Date] = mapped_column(Date, nullable=False)
     purpose:Mapped[Text] = mapped_column(Text, nullable=False)
     income_regularity:Mapped[IncomeFrequency] = mapped_column(Enum(IncomeFrequency), nullable=False)  # snapshot of the client's income pattern when this goal was created; never edited afterward
+    minimum_income:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=False)  # snapshot of the least the client receives per pay period when this goal was created; never edited afterward
     goal_status:Mapped[GoalStatus] = mapped_column(Enum(GoalStatus), nullable=False, default=GoalStatus.ONGOING)
     created_at:Mapped[datetime] = mapped_column(
                         DateTime(timezone=True), server_default=func.now()
@@ -199,21 +200,18 @@ class UserGoals(Base):
                         )
     user:Mapped["Users"] = relationship("Users", back_populates="goals")
     product:Mapped["Products"] = relationship("Products", back_populates="goals")
-    recommendation:Mapped[Optional["GoalRecommendations"]] = relationship("GoalRecommendations", back_populates="goal", uselist=False)
 
 class GoalRecommendations(Base):
     """
-    One row per saving-technique recommendation the financial agent generates.
-    Append-only: a recommendation is written once, at generation time, and
-    never edited afterward - it's the durable record of what the agent said,
-    not a live value. Runs before the goal exists (goal_id starts NULL) and is
-    attached once the goal is actually created; unique enforces at most one
-    recommendation per goal (cost control - no recompute once attached).
+    One row per saving-technique recommendation the financial agent generates,
+    for internal review. Append-only: written once, at generation time, never
+    edited. Stores the goal request it was generated from alongside the result,
+    since no goal exists yet to hold it.
     """
     __tablename__ = "GoalRecommendations"
     id:Mapped[String] = mapped_column(String, primary_key=True, default=id_generator)
     user_id:Mapped[String] = mapped_column(ForeignKey("Users.id"), nullable=False)
-    goal_id:Mapped[Optional[str]] = mapped_column(ForeignKey("UserGoals.id"), nullable=True, unique=True)
+    request:Mapped[dict] = mapped_column(JSONB, nullable=False)  # the UserGoalCreate the recommendation was generated from
     saving_amount_recommended:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=False)
     currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)
     frequency:Mapped[SavingFrequency] = mapped_column(Enum(SavingFrequency), nullable=False)
@@ -221,7 +219,6 @@ class GoalRecommendations(Base):
     alternatives:Mapped[Optional[list[dict]]] = mapped_column(JSONB, nullable=True)  # up to 2 AlternativeSavingStrategy, already validated before being written
     created_at:Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     user:Mapped["Users"] = relationship("Users", back_populates="goal_recommendations")
-    goal:Mapped[Optional["UserGoals"]] = relationship("UserGoals", back_populates="recommendation")
 
 class Transaction(Base):
     __tablename__ = "transactions"

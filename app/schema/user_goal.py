@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.model.mod_enum import CurrencyType, GoalStatus
 from app.model.mod_enum import SavingFrequency, IncomeFrequency
@@ -19,6 +19,15 @@ class UserGoalCreate(BaseModel):
     target_date:date = Field(description="by when the user needs to accomplish the goal. eg.2026-12-25")
     currency:CurrencyType = Field(description="Currency choosen")
     income_regularity:IncomeFrequency = Field(description="How often the user earns")
+    minimum_income:Decimal = Field(gt=0, decimal_places=2, description="The least the user receives in one pay period, in the goal's currency")
+
+    @model_validator(mode="after")
+    def check_goal_is_still_open(self):
+        if self.current_amount >= self.target_amount:
+            raise ValueError("current_amount must be less than target_amount")
+        if self.target_date <= date.today():
+            raise ValueError("target_date must be in the future")
+        return self
 
 class UserGoalUpdate(BaseModel):
     """
@@ -53,6 +62,7 @@ class UserGoalResponse(BaseModel):
     currency: CurrencyType
     target_date: date
     income_regularity: IncomeFrequency
+    minimum_income: Decimal = Field(decimal_places=2)
     goal_status: GoalStatus
     created_at: datetime
     updated_at: datetime
