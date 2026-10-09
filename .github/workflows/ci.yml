@@ -50,6 +50,7 @@ jobs:
       ADK_SUPPRESS_GEMINI_LITELLM_WARNINGS: "true"
       LLM_MAX_RETRIES: "1"
       LLM_RETRY_DELAY: "1"
+      APP_NAME: simlexx_wealth_ci
       TAVILY_SEARCH_API: ci-placeholder
       R2_ACCOUNT_ID: ci-placeholder
       R2_ACCESS_KEY_ID: ci-placeholder
