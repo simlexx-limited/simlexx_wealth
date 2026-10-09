@@ -15,7 +15,7 @@ class UserGoalCreate(BaseModel):
     product_id: Optional[str] = Field(default=None, description="The product this goal is invested through, if any")
     purpose:str = Field(description="Name and description of the goal")
     target_amount:Decimal = Field(gt=0, decimal_places=2, description="Target amount the user wishes to attend")
-    current_amount:Decimal = Field(default=0, ge=0, decimal_places=2, description="Current amount the user has")
+    current_amount:Decimal = Field(default=Decimal("0"), ge=0, decimal_places=2, description="Current amount the user has")
     target_date:date = Field(description="by when the user needs to accomplish the goal. eg.2026-12-25")
     currency:CurrencyType = Field(description="Currency choosen")
     income_regularity:IncomeFrequency = Field(description="How often the user earns")
