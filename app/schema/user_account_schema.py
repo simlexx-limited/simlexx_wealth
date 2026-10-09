@@ -18,7 +18,7 @@ class AccountDBSchema(BaseModel):
     user_id:str = Field(description="User Id")
     bank_name:str = Field(description="Bank Name")
     account_number:str = Field(description="User saving account number")
-    balance:Decimal = Field(default=0, description="User current balance")
+    balance:Decimal = Field(default=Decimal("0"), description="User current balance")
     currency:CurrencyType = Field(description="User account currency")
     account_document_id:str = Field(description="Reference number printed on the proof document")
     account_document:str = Field(description="Object key of the uploaded proof-of-account document")
