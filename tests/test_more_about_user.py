@@ -120,12 +120,13 @@ class TestServiceCreate:
         session.add.assert_called_once()
         session.commit.assert_awaited_once()
         assert profile.user_id == "user123"
-        assert profile.document_key == DOC_KEY
-        assert profile.profile_picture_key == PIC_KEY
-        assert isinstance(profile.document_key, str)
+        assert profile.document_keys == [DOC_KEY]
+        assert profile.profile_picture_keys == [PIC_KEY]
+        assert isinstance(profile.document_keys, list)
         assert profile.document_type == DocumentType.NATIONAL_ID
         assert profile.country_of_residence == "UG"
         assert profile.profile_verification_complete == UserAccountStatus.PENDING
+        assert profile.onboarding_complete is False   # only an agent's approval sets this
 
     @pytest.mark.asyncio
     async def test_duplicate_profile_is_rejected_and_nothing_is_saved(self, served_countries):
@@ -222,7 +223,7 @@ class TestCreateEndpoint:
         assert body["document_link"].startswith(DUMMY_ENDPOINT) and DOC_KEY in body["document_link"]
         assert body["profile_picture"].startswith(DUMMY_ENDPOINT) and PIC_KEY in body["profile_picture"]
         assert "X-Amz-Signature=" in body["document_link"]
-        assert "document_key" not in body and "profile_picture_key" not in body
+        assert "document_keys" not in body and "profile_picture_keys" not in body
         assert "links_expire_at" in body
         assert body["document_type"] == "national_id"
         assert body["profile_verification_complete"] == "pending"

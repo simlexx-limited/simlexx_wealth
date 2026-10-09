@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     ADK_SUPPRESS_GEMINI_LITELLM_WARNINGS:bool = True
     LLM_MAX_RETRIES:int
     LLM_RETRY_DELAY:int
+    APP_NAME:str
 
     # Tavily search
     TAVILY_SEARCH_API:str

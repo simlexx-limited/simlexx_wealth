@@ -50,7 +50,7 @@ async def get_file_links(
     call this in the background shortly before then.
     """
     profile = await ReviewService(session).get_profile(user_id)
-    return FileLinks.for_keys(str(profile.document_key), str(profile.profile_picture_key))
+    return FileLinks.for_keys(profile.document_keys[-1], profile.profile_picture_keys[-1])
 
 
 @router.get("/{user_id}", response_model=MoreAboutUserResponse)

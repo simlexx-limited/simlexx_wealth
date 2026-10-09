@@ -61,3 +61,19 @@ async def upload(
         raise HTTPException(status_code=500, detail=f"File upload failed: {exc}")
 
     return key
+
+
+async def delete_key(key: str) -> None:
+    """
+    Remove one object from the bucket by its key. Used when a file is being
+    replaced (not appended) and the old one should no longer exist - never
+    call this for anything that must be retained.
+    """
+    try:
+        await asyncio.to_thread(
+            _get_s3_client().delete_object,
+            Bucket=get_settings().r2_bucket_name,
+            Key=key,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"File deletion failed: {exc}")
