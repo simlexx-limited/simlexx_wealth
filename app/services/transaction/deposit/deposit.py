@@ -26,7 +26,7 @@ from app.services.logs.system_log_service import SystemLogService
 from app.services.otp_management.otp_generator import generate_otp_code
 from app.services.otp_management.otp_store import save_otp_code, get_otp_code, delete_otp_code, format_ttl_duration
 from app.services.transaction.transaction import Transaction
-from app.services.auth.firebase_auth.auth_errors import AccountNotFoundError, InvalidOtpError
+from app.services.auth.firebase_auth.auth_errors import AccountNotFoundError, ExchangeRateUnavailableError, InvalidOtpError
 from app.services.otp_management.otp_management_service import OtpManagementService
 
 
@@ -145,8 +145,22 @@ class Deposit(Transaction):
         await delete_otp_code(identifier=user_id, purpose=OtpPurpose.DEPOSIT)
 
         # The deposit always settles in the account's own currency - convert
-        # it before saving if the client deposited in a different one.
-        rate = await get_exchange_rate(user_deposit.currency, account.currency)
+        # it before saving if the client deposited in a different one. The
+        # OTP is already verified by this point, so a failure past here is a
+        # real attempted transaction and gets its own FAILED record.
+        try:
+            rate = await get_exchange_rate(user_deposit.currency, account.currency)
+        except ExchangeRateUnavailableError as exc:
+            await self.record_failed_transaction(
+                user_id=user_id, account_id=user_deposit.account_id, goal_id=user_deposit.goal_id,
+                transaction_type=TransactionType.DEPOSIT,
+                amount=user_deposit.amount, currency=user_deposit.currency,
+                requested_amount=user_deposit.amount, requested_currency=user_deposit.currency,
+                bank_reference=user_deposit.bank_reference, unit_master_reference=user_deposit.unit_master_reference,
+                failure_reason=exc.detail,
+            )
+            raise
+
         settled_amount = (user_deposit.amount * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         settled_currency = account.currency
 
@@ -186,7 +200,7 @@ class Deposit(Transaction):
         channel, destination = self.resolve_notification_channel(user_data)
         await self.notify_user(
             channel, destination, "Deposit confirmed",
-            f"Your deposit of {settled_amount} {settled_currency.value} was confirmed.",
+            f"Your deposit of {user_deposit.amount} {user_deposit.currency.value} was confirmed.",
         )
 
         profile_result = await self.db_session.execute(
