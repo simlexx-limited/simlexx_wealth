@@ -86,6 +86,18 @@ class ProductNotFoundError(AuthError):
     status_code = 404
     detail = "No such product"
 
+class InvalidOtpError(AuthError):
+    status_code = 400
+    detail = "Invalid or expired code"
+
+class ExchangeRateUnavailableError(AuthError):
+    status_code = 503
+    detail = "Could not get a current exchange rate. Try again shortly"
+
+class InsufficientBalanceError(AuthError):
+    status_code = 400
+    detail = "Insufficient balance for this withdrawal"
+
 async def auth_error_handler(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, AuthError)
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})

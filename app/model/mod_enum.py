@@ -34,6 +34,8 @@ class OtpPurpose(str, PyEnum):
     FORGOT_PASSWORD = "forgot_password"
     MFA = "mfa"
     EDIT_SENSITIVE_INFO = "edit_sensitive_info"
+    DEPOSIT = "deposit"
+    WITHDRAW = "withdraw"
 
 class NotificationChannel(str, PyEnum):
     SMS = "sms"
