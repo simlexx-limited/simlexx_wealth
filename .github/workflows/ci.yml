@@ -52,6 +52,7 @@ jobs:
       LLM_RETRY_DELAY: "1"
       APP_NAME: simlexx_wealth_ci
       TAVILY_SEARCH_API: ci-placeholder
+      EXCHANGE_RATE_API_KEY: ci-placeholder
       R2_ACCOUNT_ID: ci-placeholder
       R2_ACCESS_KEY_ID: ci-placeholder
       R2_SECRET_ACCESS_KEY: ci-placeholder
