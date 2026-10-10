@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     TAVILY_SEARCH_API:str
     SEARCH_DEPTH:str = "basic"
 
+    # Exchange rates (ExchangeRate-API)
+    EXCHANGE_RATE_API_KEY:str
+
     # Cloudflare S3 Bucket
     R2_ACCOUNT_ID:str
     R2_ACCESS_KEY_ID:str

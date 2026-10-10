@@ -227,8 +227,10 @@ class Transaction(Base):
     account_id:Mapped[String] = mapped_column(ForeignKey("UserAccount.id"), nullable=False)
     goal_id:Mapped[String] = mapped_column(ForeignKey("UserGoals.id"), nullable=True)
     type:Mapped[TransactionType] = mapped_column(Enum(TransactionType), nullable=False)
-    amount:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=False)
-    currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)
+    amount:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=False)  # settled: what actually moved, in the account's own currency
+    currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)  # settled: always the account's own currency
+    requested_amount:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=False)  # what the client asked for - sent (deposit) or to receive (withdrawal) - before conversion
+    requested_currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)
     fx_rate_to_base:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=True)  # rate from `currency` to the platform's base currency, captured at transaction time
     status:Mapped[TransactionStatus] = mapped_column(Enum(TransactionStatus), nullable=False, default=TransactionStatus.PENDING)
     bank_reference:Mapped[String] = mapped_column(String, nullable=True)  # reference from the transaction made directly via the bank api
