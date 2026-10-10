@@ -12,6 +12,8 @@ from app.routers.reviews.review_router import router as review_router
 from app.routers.onboarding.user_goal import router as user_goal_router
 from app.routers.user_account.user_account_router import router as user_account_router
 from app.routers.products.product_router import router as product_router
+from app.routers.transaction.deposit.deposit_router import router as deposit_router
+from app.routers.transaction.withdraw.withdraw_router import router as withdraw_router
 from app.services.auth.firebase_auth.auth_errors import AuthError, auth_error_handler
 
 
@@ -29,4 +31,6 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(user_goal_router)
     app.include_router(user_account_router)
     app.include_router(product_router)
+    app.include_router(deposit_router)
+    app.include_router(withdraw_router)
     app.add_exception_handler(AuthError, auth_error_handler)
