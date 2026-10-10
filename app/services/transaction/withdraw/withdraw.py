@@ -22,7 +22,12 @@ from app.services.logs.system_log_service import SystemLogService
 from app.services.otp_management.otp_generator import generate_otp_code
 from app.services.otp_management.otp_store import save_otp_code, get_otp_code, delete_otp_code, format_ttl_duration
 from app.services.transaction.transaction import Transaction
-from app.services.auth.firebase_auth.auth_errors import AccountNotFoundError, InsufficientBalanceError, InvalidOtpError
+from app.services.auth.firebase_auth.auth_errors import (
+    AccountNotFoundError,
+    ExchangeRateUnavailableError,
+    InsufficientBalanceError,
+    InvalidOtpError,
+)
 from app.services.otp_management.otp_management_service import OtpManagementService
 
 
@@ -131,12 +136,33 @@ class Withdraw(Transaction):
         await delete_otp_code(identifier=user_id, purpose=OtpPurpose.WITHDRAW)
 
         # The account is always debited in its own currency - convert the
-        # client's requested payout into it before checking the balance.
-        rate = await get_exchange_rate(user_withdraw.currency, account.currency)
+        # client's requested payout into it before checking the balance. The
+        # OTP is already verified by this point, so a failure past here is a
+        # real attempted transaction and gets its own FAILED record.
+        try:
+            rate = await get_exchange_rate(user_withdraw.currency, account.currency)
+        except ExchangeRateUnavailableError as exc:
+            await self.record_failed_transaction(
+                user_id=user_id, account_id=user_withdraw.account_id, goal_id=user_withdraw.goal_id,
+                transaction_type=TransactionType.WITHDRAWAL,
+                amount=user_withdraw.amount, currency=user_withdraw.currency,
+                requested_amount=user_withdraw.amount, requested_currency=user_withdraw.currency,
+                bank_reference=user_withdraw.bank_reference, failure_reason=exc.detail,
+            )
+            raise
+
         debit_amount = (user_withdraw.amount * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         debit_currency = account.currency
 
         if debit_amount > cast(Decimal, account.balance):
+            await self.record_failed_transaction(
+                user_id=user_id, account_id=user_withdraw.account_id, goal_id=user_withdraw.goal_id,
+                transaction_type=TransactionType.WITHDRAWAL,
+                amount=debit_amount, currency=debit_currency,
+                requested_amount=user_withdraw.amount, requested_currency=user_withdraw.currency,
+                bank_reference=user_withdraw.bank_reference, fx_rate_to_base=rate,
+                failure_reason=InsufficientBalanceError.detail,
+            )
             raise InsufficientBalanceError()
 
         new_transaction = TransactionModel(
