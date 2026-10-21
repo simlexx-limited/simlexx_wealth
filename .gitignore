@@ -1,5 +1,4 @@
 venv
-.env
 .venv/
 *.env
 __pycache__/
@@ -14,7 +13,6 @@ htmlcov/
 build/
 dist/
 *.egg-info/
-.vscode/
 .idea/
 .DS_Store
 push.sh
@@ -27,3 +25,5 @@ test_app.json
 
 # Simulated SMS OTP output (dev-only, never commit real codes)
 otp_code.txt
+config.bat
+node_modules
