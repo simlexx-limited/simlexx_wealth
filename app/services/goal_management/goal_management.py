@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 
-from typing import Optional
+from datetime import date
+from decimal import Decimal
+from typing import Optional, cast
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config.setting import get_settings
 from app.model.models import GoalRecommendations, Products, Users, UserGoals
 from app.model.mod_enum import GoalStatus, NotificationChannel
-from app.schema.user_goal import UserGoalCreate, SavingRecommendation, UserGoalUpdate
+from app.schema.user_goal import GoalDashboardResponse, UserGoalCreate, SavingRecommendation, UserGoalUpdate
 from app.services.auth.firebase_auth.auth_errors import (
     AccountNotFoundError,   # 404 - the goal (or account) doesn't exist
     ProductNotFoundError,   # 404 - the given product_id isn't a real product
@@ -15,7 +18,9 @@ from app.services.auth.firebase_auth.auth_errors import (
 )
 from app.services.logs.system_log_service import SystemLogService
 from app.services.notifications.notification_service import NotificationService
+from app.ai_agents.estimator import estimate
 from app.ai_agents.orchestrator.orchestrator import orchestrator
+from app.services.transaction.deposit.deposit import Deposit
 
 # A goal is "active" while the user is still working toward it. COMPLETED and
 # TERMINATED are its two end states.
@@ -101,6 +106,82 @@ class UserGoalManagement:
         if goal is None:
             raise AccountNotFoundError(detail="No goal found for this user.")
         return goal
+
+    async def get_goal_dashboard(self, user_id:str, goal_id:str) -> GoalDashboardResponse:
+        """
+        A client's progress on one of their own goals.
+
+        Raises AccountNotFoundError if there's no such goal for this user.
+        """
+        goal = await self.get_one_goal(user_id, goal_id)
+        return await self.build_goal_dashboard(goal)
+
+    async def list_goal_dashboards(self, user_id:str) -> list[GoalDashboardResponse]:
+        """
+        Progress on every one of the caller's active goals - the dashboard's
+        goals list, each computed the same way a single goal's dashboard is.
+        """
+        statement = (
+            select(UserGoals)
+            .where(UserGoals.user_id == user_id, UserGoals.goal_status.in_(ACTIVE_STATUSES))
+            .order_by(UserGoals.created_at.desc())
+        )
+        goals = list((await self.db_session.execute(statement)).scalars().all())
+        return [await self.build_goal_dashboard(goal) for goal in goals]
+
+    async def build_goal_dashboard(self, goal:UserGoals) -> GoalDashboardResponse:
+        """
+        Progress, contribution totals, simulated growth, and a freshly
+        recomputed recommendation for one already-fetched goal.
+
+        The recommendation isn't read from a stored row - GoalRecommendations
+        isn't linked to a goal, by design - it's recalculated with today's
+        remaining amount using the same deterministic estimator the initial
+        recommendation uses, so it's always current rather than stuck at
+        whatever it was the day the goal was created.
+        """
+        target_amount = cast(Decimal, goal.target_amount)
+        current_amount = cast(Decimal, goal.current_amount)
+
+        total_contributed, number_of_contributions = await Deposit(self.db_session).get_goal_deposit_stats(
+            user_id=cast(str, goal.user_id), goal_id=cast(str, goal.id),
+        )
+
+        growth = Decimal("0")
+        if goal.product_id is not None:
+            product = await self.db_session.get(Products, goal.product_id)
+            if product is not None and product.annual_return_rate is not None:
+                days_held = max(0, (date.today() - goal.created_at.date()).days)
+                growth = (
+                    current_amount * cast(Decimal, product.annual_return_rate)
+                    * Decimal(days_held) / Decimal(str(get_settings().GROWTH_DAYS_PER_YEAR))
+                ).quantize(Decimal("0.01"))
+
+        next_amount = None
+        next_frequency = None
+        if current_amount < target_amount and cast(date, goal.target_date) > date.today():
+            figures = estimate(
+                target_amount=target_amount, current_amount=current_amount,
+                minimum_income=cast(Decimal, goal.minimum_income), income_regularity=goal.income_regularity,
+                target_date=cast(date, goal.target_date), today=date.today(),
+            )
+            next_amount = figures.required
+            next_frequency = figures.frequency
+
+        percent_complete = (
+            (current_amount / target_amount * 100).quantize(Decimal("0.01")) if target_amount > 0 else Decimal("0")
+        )
+
+        return GoalDashboardResponse(
+            id=str(goal.id), purpose=str(goal.purpose), currency=goal.currency,
+            target_amount=target_amount, current_amount=current_amount,
+            amount_remaining=max(Decimal("0"), target_amount - current_amount),
+            percent_complete=min(Decimal("100"), percent_complete),
+            target_date=cast(date, goal.target_date),
+            total_contributed=total_contributed, number_of_contributions=number_of_contributions,
+            growth=growth,
+            next_recommended_amount=next_amount, next_recommended_frequency=next_frequency,
+        )
 
     async def get_chosen_product(self, product_id:Optional[str]) -> Optional[Products]:
         if product_id is None:
