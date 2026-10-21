@@ -79,6 +79,24 @@ class AlternativeSavingStrategy(BaseModel):
     frequency: SavingFrequency
     reason: str
 
+class GoalDashboardResponse(BaseModel):
+    """
+    A client's progress on one goal - everything View 10 of the app shows.
+    """
+    id: str
+    purpose: str
+    currency: CurrencyType
+    target_amount: Decimal = Field(decimal_places=2)
+    current_amount: Decimal = Field(decimal_places=2)
+    amount_remaining: Decimal = Field(decimal_places=2)
+    percent_complete: Decimal = Field(decimal_places=2, description="0-100")
+    target_date: date
+    total_contributed: Decimal = Field(decimal_places=2, description="Sum of completed deposits toward this goal")
+    number_of_contributions: int
+    growth: Decimal = Field(decimal_places=2, description="Simulated - 0 if no product is linked or it has no return rate set")
+    next_recommended_amount: Optional[Decimal] = Field(default=None, decimal_places=2)
+    next_recommended_frequency: Optional[SavingFrequency] = None
+
 class SavingRecommendation(BaseModel):
     """
     Saving technique recommendation based on user income/frequency, goal target date

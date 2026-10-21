@@ -71,6 +71,8 @@ class GoalStatus(str, PyEnum):
 class ProductType(str, PyEnum):
     UNIT_TRUST = "unit_trust"
     MONEY_MARKET_FUND = "money_market_fund"
+    BALANCED_FUND = "balanced_fund"
+    INCOME_FUND = "income_fund"
 
 class NotificationStatus(str, PyEnum):
     PENDING = "pending"

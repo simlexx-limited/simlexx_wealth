@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     # OTP
     OTP_TTL_SECONDS:int = 86400
 
+    # Goal dashboard: days treated as one year when simulating investment
+    # growth - a float so it can be tuned (e.g. lowered for a demo) without a
+    # code change
+    GROWTH_DAYS_PER_YEAR:float = 365.0
+
     # Rate limiting
     OTP_ATTEMPT_LIMIT:int = 5
     OTP_ATTEMPT_WINDOW_SECONDS:int = 3600

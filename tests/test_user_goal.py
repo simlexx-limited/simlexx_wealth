@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -8,6 +8,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.config.setting import get_settings
 from app.database.database import get_session
 from app.model.mod_enum import CurrencyType, GoalStatus, IncomeFrequency, SavingFrequency
 from app.model.models import GoalRecommendations, Notifications, SystemLogs
@@ -47,6 +48,16 @@ def scalar_result(value: Any) -> MagicMock:
     result = MagicMock()
     result.scalar_one_or_none.return_value = value
     return result
+
+
+def list_result(values: list) -> MagicMock:
+    result = MagicMock()
+    result.scalars.return_value.all.return_value = values
+    return result
+
+
+def statements(session: AsyncMock) -> list[str]:
+    return [str(c.args[0].compile(compile_kwargs={"literal_binds": True})) for c in session.execute.await_args_list]
 
 
 async def fake_refresh(obj: Any) -> None:
@@ -220,6 +231,178 @@ class TestServiceGetGoalRecommendation:
 
 
 # ---------------------------------------------------------------------------
+# UserGoalManagement.get_goal_dashboard
+# ---------------------------------------------------------------------------
+
+def make_goal_row(**overrides: Any) -> SimpleNamespace:
+    fields: dict[str, Any] = dict(
+        id="goal-1", user_id="user123", purpose="Trip to Nairobi", currency=CurrencyType.UGX,
+        target_amount=Decimal("250000"), current_amount=Decimal("50000"),
+        target_date=date(2030, 1, 1), minimum_income=Decimal("50000"),
+        income_regularity=IncomeFrequency.MONTHLY, product_id=None,
+        created_at=datetime.now(timezone.utc),
+    )
+    fields.update(overrides)
+    return SimpleNamespace(**fields)
+
+
+def sum_count_result(total: Decimal, count: int) -> MagicMock:
+    result = MagicMock()
+    result.one.return_value = (total, count)
+    return result
+
+
+def make_product_row(**overrides: Any) -> SimpleNamespace:
+    fields: dict[str, Any] = dict(id="prod-1", annual_return_rate=Decimal("0.11"))
+    fields.update(overrides)
+    return SimpleNamespace(**fields)
+
+
+class TestServiceGoalDashboard:
+    @pytest.mark.asyncio
+    async def test_progress_fields_without_a_product(self):
+        goal = make_goal_row(target_amount=Decimal("250000"), current_amount=Decimal("50000"))
+        session = make_session([scalar_result(goal), sum_count_result(Decimal("50000"), 2)])
+
+        result = await UserGoalManagement(session).get_goal_dashboard(user_id="user123", goal_id="goal-1")
+
+        assert result.target_amount == Decimal("250000")
+        assert result.current_amount == Decimal("50000")
+        assert result.amount_remaining == Decimal("200000")
+        assert result.percent_complete == Decimal("20.00")
+        assert result.total_contributed == Decimal("50000")
+        assert result.number_of_contributions == 2
+        assert result.growth == Decimal("0")
+
+    @pytest.mark.asyncio
+    async def test_growth_is_zero_without_a_product(self):
+        goal = make_goal_row(product_id=None)
+        session = make_session([scalar_result(goal), sum_count_result(Decimal("0"), 0)])
+
+        result = await UserGoalManagement(session).get_goal_dashboard(user_id="user123", goal_id="goal-1")
+
+        assert result.growth == Decimal("0")
+        session.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_growth_is_simulated_from_the_products_return_rate(self):
+        days_held = 73
+        created_at = datetime.now(timezone.utc) - timedelta(days=days_held)
+        goal = make_goal_row(product_id="prod-1", current_amount=Decimal("100000"), created_at=created_at)
+        session = make_session([scalar_result(goal), sum_count_result(Decimal("100000"), 1)])
+        session.get = AsyncMock(return_value=make_product_row(annual_return_rate=Decimal("0.11")))
+
+        result = await UserGoalManagement(session).get_goal_dashboard(user_id="user123", goal_id="goal-1")
+
+        expected = (Decimal("100000") * Decimal("0.11") * Decimal(days_held) / Decimal("365.0")).quantize(Decimal("0.01"))
+        assert result.growth == expected
+        session.get.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_growth_is_zero_when_the_product_has_no_return_rate_set(self):
+        goal = make_goal_row(product_id="prod-1")
+        session = make_session([scalar_result(goal), sum_count_result(Decimal("0"), 0)])
+        session.get = AsyncMock(return_value=make_product_row(annual_return_rate=None))
+
+        result = await UserGoalManagement(session).get_goal_dashboard(user_id="user123", goal_id="goal-1")
+
+        assert result.growth == Decimal("0")
+
+    @pytest.mark.asyncio
+    async def test_the_growth_window_can_be_tuned_via_settings(self, monkeypatch):
+        days_held = 30
+        created_at = datetime.now(timezone.utc) - timedelta(days=days_held)
+        goal = make_goal_row(product_id="prod-1", current_amount=Decimal("100000"), created_at=created_at)
+        session = make_session([scalar_result(goal), sum_count_result(Decimal("0"), 0)])
+        session.get = AsyncMock(return_value=make_product_row(annual_return_rate=Decimal("0.11")))
+        monkeypatch.setattr(get_settings(), "GROWTH_DAYS_PER_YEAR", 30.0)
+
+        result = await UserGoalManagement(session).get_goal_dashboard(user_id="user123", goal_id="goal-1")
+
+        expected = (Decimal("100000") * Decimal("0.11") * Decimal(days_held) / Decimal("30.0")).quantize(Decimal("0.01"))
+        assert result.growth == expected
+
+    @pytest.mark.asyncio
+    async def test_recommendation_is_recomputed_live_not_fetched_from_storage(self):
+        goal = make_goal_row(target_amount=Decimal("250000"), current_amount=Decimal("50000"),
+                             target_date=date(2030, 1, 1), minimum_income=Decimal("50000"),
+                             income_regularity=IncomeFrequency.MONTHLY)
+        session = make_session([scalar_result(goal), sum_count_result(Decimal("0"), 0)])
+
+        result = await UserGoalManagement(session).get_goal_dashboard(user_id="user123", goal_id="goal-1")
+
+        assert result.next_recommended_amount is not None
+        assert result.next_recommended_frequency == SavingFrequency.MONTHLY
+        assert session.execute.await_count == 2   # goal lookup + deposit stats only - nothing fetched for a recommendation
+
+    @pytest.mark.asyncio
+    async def test_no_recommendation_when_the_goal_is_already_reached(self):
+        goal = make_goal_row(target_amount=Decimal("100000"), current_amount=Decimal("100000"))
+        session = make_session([scalar_result(goal), sum_count_result(Decimal("100000"), 1)])
+
+        result = await UserGoalManagement(session).get_goal_dashboard(user_id="user123", goal_id="goal-1")
+
+        assert result.next_recommended_amount is None
+        assert result.next_recommended_frequency is None
+
+    @pytest.mark.asyncio
+    async def test_no_recommendation_when_the_target_date_has_passed(self):
+        goal = make_goal_row(target_date=date(2020, 1, 1))
+        session = make_session([scalar_result(goal), sum_count_result(Decimal("0"), 0)])
+
+        result = await UserGoalManagement(session).get_goal_dashboard(user_id="user123", goal_id="goal-1")
+
+        assert result.next_recommended_amount is None
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_goal_is_404(self):
+        session = make_session([scalar_result(None)])
+
+        with pytest.raises(AccountNotFoundError):
+            await UserGoalManagement(session).get_goal_dashboard(user_id="user123", goal_id="ghost-goal")
+
+
+# ---------------------------------------------------------------------------
+# UserGoalManagement.list_goal_dashboards
+# ---------------------------------------------------------------------------
+
+class TestServiceListGoalDashboards:
+    @pytest.mark.asyncio
+    async def test_returns_a_dashboard_per_active_goal(self):
+        goals = [
+            make_goal_row(id="goal-1", purpose="Trip to Nairobi"),
+            make_goal_row(id="goal-2", purpose="Emergency fund"),
+        ]
+        session = make_session([
+            list_result(goals),
+            sum_count_result(Decimal("0"), 0), sum_count_result(Decimal("0"), 0),
+        ])
+
+        results = await UserGoalManagement(session).list_goal_dashboards(user_id="user123")
+
+        assert [r.id for r in results] == ["goal-1", "goal-2"]
+        assert [r.purpose for r in results] == ["Trip to Nairobi", "Emergency fund"]
+
+    @pytest.mark.asyncio
+    async def test_the_goal_listing_is_scoped_to_the_caller_and_active_statuses(self):
+        session = make_session([list_result([])])
+
+        await UserGoalManagement(session).list_goal_dashboards(user_id="user123")
+
+        [goals_sql] = statements(session)
+        assert "user_id = 'user123'" in goals_sql
+        assert "goal_status IN" in goals_sql
+
+    @pytest.mark.asyncio
+    async def test_no_active_goals_means_an_empty_list(self):
+        session = make_session([list_result([])])
+
+        results = await UserGoalManagement(session).list_goal_dashboards(user_id="user123")
+
+        assert results == []
+
+
+# ---------------------------------------------------------------------------
 # endpoints - real JSON requests
 # ---------------------------------------------------------------------------
 
@@ -304,3 +487,7 @@ class TestRecommendationEndpoint:
         del api.app.dependency_overrides[get_current_user]
         response = api.client.post(f"{BASE}/goal/recommendation", json=GOAL_BODY)
         assert response.status_code in (401, 403)
+
+
+# The goal dashboard endpoint itself (GET /goal/dashboard/{goal_id}) moved to
+# the dedicated dashboard router - see tests/test_dashboard.py.

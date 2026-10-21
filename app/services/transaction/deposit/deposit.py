@@ -259,6 +259,25 @@ class Deposit(Transaction):
         total = int((await self.db_session.execute(count_statement)).scalar_one())
         return items, total
 
+    async def get_goal_deposit_stats(self, user_id:str, goal_id:str) -> tuple[Decimal, int]:
+        """
+        Total contributed and number of contributions made toward goal_id,
+        completed deposits only - for the goal dashboard. Scoped to user_id
+        so this can't be used to probe another user's goal.
+        """
+        statement = (
+            select(func.coalesce(func.sum(TransactionModel.amount), 0), func.count())
+            .select_from(TransactionModel)
+            .where(
+                TransactionModel.user_id == user_id,
+                TransactionModel.goal_id == goal_id,
+                TransactionModel.type == TransactionType.DEPOSIT,
+                TransactionModel.status == TransactionStatus.COMPLETED,
+            )
+        )
+        total, count = (await self.db_session.execute(statement)).one()
+        return Decimal(total), int(count)
+
     async def get_all_deposits(
             self,
             user_id:str,

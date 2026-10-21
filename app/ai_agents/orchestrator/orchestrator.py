@@ -3,7 +3,7 @@
 from datetime import date
 from decimal import Decimal
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, cast
 
 from app.ai_agents.adk.agent_config import Agents
 from app.ai_agents.estimator import estimate
@@ -20,8 +20,12 @@ def describe_product(product:Optional[Products]) -> str:
         f"minimum investment {product.minimum_investment} {product.currency.value}"
         if product.minimum_investment is not None else "no stated minimum investment"
     )
+    rate = (
+        f"indicative annual return {(cast(Decimal, product.annual_return_rate) * 100).quantize(Decimal('0.01'))}% (not guaranteed)"
+        if product.annual_return_rate is not None else "no stated indicative return"
+    )
     return (f"{product.product_name} by {product.company_name} "
-            f"({product.product_type.value}), {minimum}. {product.description}")
+            f"({product.product_type.value}), {minimum}, {rate}. {product.description}")
 
 class Orchestrator:
     def __init__(self):
