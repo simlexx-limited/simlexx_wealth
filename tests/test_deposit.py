@@ -379,6 +379,31 @@ class TestServiceDepositHistory:
         listing_sql, _ = statements(session)
         assert "user_id = 'user123'" in listing_sql
 
+    @pytest.mark.asyncio
+    async def test_goal_deposit_stats_sums_completed_deposits(self):
+        result = MagicMock()
+        result.one.return_value = (Decimal("75000"), 3)
+        session = make_session([result])
+
+        total, count = await Deposit(session).get_goal_deposit_stats(user_id="user123", goal_id="goal-1")
+
+        assert total == Decimal("75000")
+        assert count == 3
+
+    @pytest.mark.asyncio
+    async def test_goal_deposit_stats_is_scoped_to_the_caller_and_the_goal(self):
+        result = MagicMock()
+        result.one.return_value = (Decimal("0"), 0)
+        session = make_session([result])
+
+        await Deposit(session).get_goal_deposit_stats(user_id="user123", goal_id="goal-1")
+
+        [stats_sql] = statements(session)
+        assert "user_id = 'user123'" in stats_sql
+        assert "goal_id = 'goal-1'" in stats_sql
+        assert "type = 'DEPOSIT'" in stats_sql or "DEPOSIT" in stats_sql
+        assert "status = 'COMPLETED'" in stats_sql or "COMPLETED" in stats_sql
+
 
 # ---------------------------------------------------------------------------
 # endpoints
