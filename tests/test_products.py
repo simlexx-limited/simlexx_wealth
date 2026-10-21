@@ -20,6 +20,7 @@ def make_product(**overrides):
         id="p1", company_name="Acme Capital", product_name="Growth Fund",
         product_type=ProductType.UNIT_TRUST, description="A balanced unit trust.",
         minimum_investment=Decimal("10000"), currency=CurrencyType.UGX, is_active=True,
+        annual_return_rate=Decimal("0.11"),
     )
     fields.update(overrides)
     return SimpleNamespace(**fields)
@@ -71,8 +72,13 @@ class TestDescribeProduct:
         text = describe_product(make_product())
         assert "Growth Fund by Acme Capital (unit_trust)" in text
         assert "minimum investment 10000 UGX" in text
+        assert "indicative annual return 11.00% (not guaranteed)" in text
         assert "A balanced unit trust." in text
 
     def test_a_missing_minimum_is_said_plainly(self):
         text = describe_product(make_product(minimum_investment=None))
         assert "no stated minimum investment" in text
+
+    def test_a_missing_return_rate_is_said_plainly(self):
+        text = describe_product(make_product(annual_return_rate=None))
+        assert "no stated indicative return" in text
