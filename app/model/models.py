@@ -273,6 +273,7 @@ class Products(Base):
     description:Mapped[Text] = mapped_column(Text, nullable=False)
     minimum_investment:Mapped[Numeric] = mapped_column(Numeric(30, 8), nullable=True)
     currency:Mapped[CurrencyType] = mapped_column(Enum(CurrencyType), nullable=False)
+    annual_return_rate:Mapped[Numeric] = mapped_column(Numeric(5, 4), nullable=True)  # e.g. 0.11 for 11%/year - simulated, no partner-supplied figure exists yet
     is_active:Mapped[Boolean] = mapped_column(Boolean, nullable=False, default=True)
     document_id:Mapped[String] = mapped_column(String, nullable=False)
     document_link:Mapped[str] = mapped_column(String, nullable=False)
