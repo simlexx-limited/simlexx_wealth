@@ -7,6 +7,13 @@ public endpoint for this):
     docker compose exec api python -m app.scripts.create_admin
     docker compose exec api python -m app.scripts.create_admin --reset-password
 
+It prompts for three things, in this order: phone number (international
+format, e.g. +256700000000), email address, then password (typed twice to
+confirm - hidden input, at least 12 characters, with an uppercase letter, a
+lowercase letter, a number, and a special character). --phone/--email skip
+their own prompt if passed on the command line; the password is always
+prompted for.
+
 Running it again with a different phone number creates another admin, so
 losing one account never locks everybody out.
 """
@@ -145,8 +152,12 @@ def read_password() -> str:
 
 
 async def run(args: argparse.Namespace) -> None:
-    phone_number = args.phone or input("Phone number (e.g. +256700000000): ").strip()
-    email_address = args.email or input("Email address: ").strip()
+    print("Creating or updating a Simlexx admin - you'll be asked for three things: "
+          "an admin phone number, an admin email address, then an admin password.\n")
+    phone_number = args.phone or input("Admin phone number (e.g. +256700000000): ").strip()
+    email_address = args.email or input("Admin email address: ").strip()
+    print("\nNow the password - at least 12 characters, with an uppercase letter, a "
+          "lowercase letter, a number, and a special character. Typed input won't be shown.")
     password = read_password()
 
     async with AsyncSessionLocal() as session:

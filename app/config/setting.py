@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # Celery
     CELERY_BROKER_URL:str
     CELERY_RESULT_BACKEND:str
+    CELERY_TASK_ALWAYS_EAGER:bool = False   # true on deployments with no Celery worker - runs tasks inline instead of queuing them
 
     # Openrouter & ADK
     OPENROUTER_KEY:str
