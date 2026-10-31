@@ -134,7 +134,7 @@ class TestPhoneAuthRegister:
         with patch(f"{PATCH_TARGET}.generate_otp_code", return_value=12345678), \
              patch(f"{PATCH_TARGET}.save_otp_code", new=AsyncMock()), \
              patch(f"{PATCH_TARGET}.send_otp_sms", new=AsyncMock()), \
-             patch(f"{PATCH_TARGET}.send_email_task", new=MagicMock()):
+             patch(f"{PATCH_TARGET}.queue_email", new=MagicMock()):
             await service.register(
                 register_data=make_signup_schema(
                     password="Str0ng!Passw0rd", confirm_password="Str0ng!Passw0rd"
@@ -163,12 +163,12 @@ class TestPhoneAuthRegister:
             call_order.append("save_redis")
 
         mock_email_task = MagicMock()
-        mock_email_task.delay.side_effect = lambda *a, **k: call_order.append("send_email")
+        mock_email_task.side_effect = lambda *a, **k: call_order.append("send_email")
 
         with patch(f"{PATCH_TARGET}.generate_otp_code", return_value=99999999), \
              patch(f"{PATCH_TARGET}.send_otp_sms", side_effect=fake_send_sms), \
              patch(f"{PATCH_TARGET}.save_otp_code", side_effect=fake_save_otp_code), \
-             patch(f"{PATCH_TARGET}.send_email_task", mock_email_task):
+             patch(f"{PATCH_TARGET}.queue_email", mock_email_task):
             result = await service.register(
                 register_data=make_signup_schema(
                     phone_number="+250781234567", email_address="phoneuser@example.com"
