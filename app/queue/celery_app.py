@@ -18,4 +18,6 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     worker_concurrency=settings.MAX_WORKERS,
+    task_always_eager=settings.CELERY_TASK_ALWAYS_EAGER,
+    task_eager_propagates=settings.CELERY_TASK_ALWAYS_EAGER,
 )
