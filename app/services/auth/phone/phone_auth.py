@@ -22,7 +22,7 @@ from app.services.notifications.notification_service import NotificationService
 from app.services.logs.system_log_service import SystemLogService
 from app.services.sms.sms_service import send_otp_sms
 from app.services.auth.firebase_auth.firebase_auth import Auth
-from app.services.email.tasks import send_email_task
+from app.services.email.tasks import queue_email
 from app.services.auth.phone.token.jwt import JwtManagement
 from app.services.auth import login_lockout
 from app.services.auth.firebase_auth.auth_errors import (AuthError,
@@ -119,7 +119,7 @@ class PhoneAuthentication(Auth):
         """
         Function to send email during registration
         """
-        send_email_task.delay(
+        queue_email(
             email_address,
             "Welcome to Simlexx Wealth",
             message

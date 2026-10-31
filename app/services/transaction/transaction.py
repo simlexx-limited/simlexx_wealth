@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.model.models import Users, UserAccount, UserGoals, Transaction as TransactionModel
 from app.model.mod_enum import CurrencyType, NotificationChannel, TransactionStatus, TransactionType
 from app.services.auth.firebase_auth.auth_errors import AccountNotFoundError
-from app.services.email.tasks import send_email_task
+from app.services.email.tasks import queue_email
 from app.services.logs.system_log_service import SystemLogService
 from app.services.sms.sms_service import send_otp_sms
 
@@ -95,6 +95,6 @@ class Transaction:
     async def notify_user(self, channel:NotificationChannel, destination:str, subject:str, message:str) -> None:
         """Send message over whichever channel resolve_notification_channel picked."""
         if channel == NotificationChannel.EMAIL:
-            send_email_task.delay(destination, subject, message)
+            queue_email(destination, subject, message)
         else:
             await send_otp_sms(destination, message)
