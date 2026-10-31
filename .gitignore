@@ -27,3 +27,4 @@ test_app.json
 
 # Simulated SMS OTP output (dev-only, never commit real codes)
 otp_code.txt
+scripts.sh
