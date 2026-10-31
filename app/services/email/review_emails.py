@@ -1,4 +1,4 @@
-from app.services.email.tasks import send_email_task
+from app.services.email.tasks import queue_email
 
 
 def send_profile_review_email(to_address: str, first_name: str, approved: bool, comment: str) -> None:
@@ -19,4 +19,4 @@ def send_profile_review_email(to_address: str, first_name: str, approved: bool, 
             "You can correct your details or documents in the app. Your profile will "
             "then be reviewed again."
         )
-    send_email_task.delay(to_address, subject, body)
+    queue_email(to_address, subject, body)

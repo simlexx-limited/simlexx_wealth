@@ -115,7 +115,7 @@ class TestServiceSendOtpWithdraw:
     async def test_sends_by_email_when_email_is_verified(self, monkeypatch):
         session = make_session([scalar_result(make_user(email_verified=True, phone_number_verified=False))])
         email_mock = MagicMock()
-        monkeypatch.setattr("app.services.transaction.transaction.send_email_task", email_mock)
+        monkeypatch.setattr("app.services.transaction.transaction.queue_email", email_mock)
         sms_mock = AsyncMock()
         monkeypatch.setattr("app.services.transaction.transaction.send_otp_sms", sms_mock)
         monkeypatch.setattr(f"{PATCH_TARGET}.generate_otp_code", lambda: 12345678)
@@ -125,14 +125,14 @@ class TestServiceSendOtpWithdraw:
 
         assert result.email_address == "user@example.com"
         assert result.phone_number is None
-        email_mock.delay.assert_called_once()
+        email_mock.assert_called_once()
         sms_mock.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_sends_by_phone_when_only_phone_is_verified(self, monkeypatch):
         session = make_session([scalar_result(make_user(email_verified=False, phone_number_verified=True))])
         email_mock = MagicMock()
-        monkeypatch.setattr("app.services.transaction.transaction.send_email_task", email_mock)
+        monkeypatch.setattr("app.services.transaction.transaction.queue_email", email_mock)
         sms_mock = AsyncMock()
         monkeypatch.setattr("app.services.transaction.transaction.send_otp_sms", sms_mock)
         monkeypatch.setattr(f"{PATCH_TARGET}.generate_otp_code", lambda: 87654321)
@@ -143,7 +143,7 @@ class TestServiceSendOtpWithdraw:
         assert result.phone_number == "+10005550000"
         assert result.email_address is None
         sms_mock.assert_awaited_once_with("+10005550000", "87654321")
-        email_mock.delay.assert_not_called()
+        email_mock.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_rejects_when_neither_channel_is_verified(self, monkeypatch):
@@ -171,7 +171,7 @@ class TestServiceSaveWithdraw:
         monkeypatch.setattr(f"{PATCH_TARGET}.get_otp_code", AsyncMock(return_value="12345678"))
         monkeypatch.setattr(f"{PATCH_TARGET}.delete_otp_code", AsyncMock())
         monkeypatch.setattr(f"{PATCH_TARGET}.get_exchange_rate", AsyncMock(return_value=Decimal("1")))
-        monkeypatch.setattr("app.services.transaction.transaction.send_email_task", MagicMock())
+        monkeypatch.setattr("app.services.transaction.transaction.queue_email", MagicMock())
 
         result = await Withdraw(session).save_withdraw(
             user_withdraw=UserWithdraw(**withdraw_fields(amount=Decimal("1000"))),
@@ -194,7 +194,7 @@ class TestServiceSaveWithdraw:
         monkeypatch.setattr(f"{PATCH_TARGET}.get_otp_code", AsyncMock(return_value="12345678"))
         monkeypatch.setattr(f"{PATCH_TARGET}.delete_otp_code", AsyncMock())
         monkeypatch.setattr(f"{PATCH_TARGET}.get_exchange_rate", AsyncMock(return_value=Decimal("1")))
-        monkeypatch.setattr("app.services.transaction.transaction.send_email_task", MagicMock())
+        monkeypatch.setattr("app.services.transaction.transaction.queue_email", MagicMock())
 
         await Withdraw(session).save_withdraw(
             user_withdraw=UserWithdraw(**withdraw_fields(goal_id="goal-1", amount=Decimal("2000"))),
@@ -214,7 +214,7 @@ class TestServiceSaveWithdraw:
         monkeypatch.setattr(f"{PATCH_TARGET}.get_otp_code", AsyncMock(return_value="12345678"))
         monkeypatch.setattr(f"{PATCH_TARGET}.delete_otp_code", AsyncMock())
         monkeypatch.setattr(f"{PATCH_TARGET}.get_exchange_rate", AsyncMock(return_value=Decimal("3700")))
-        monkeypatch.setattr("app.services.transaction.transaction.send_email_task", MagicMock())
+        monkeypatch.setattr("app.services.transaction.transaction.queue_email", MagicMock())
 
         result = await Withdraw(session).save_withdraw(
             user_withdraw=UserWithdraw(**withdraw_fields(amount=Decimal("10"), currency=CurrencyType.USD)),
@@ -238,14 +238,14 @@ class TestServiceSaveWithdraw:
         monkeypatch.setattr(f"{PATCH_TARGET}.delete_otp_code", AsyncMock())
         monkeypatch.setattr(f"{PATCH_TARGET}.get_exchange_rate", AsyncMock(return_value=Decimal("3700")))
         email_mock = MagicMock()
-        monkeypatch.setattr("app.services.transaction.transaction.send_email_task", email_mock)
+        monkeypatch.setattr("app.services.transaction.transaction.queue_email", email_mock)
 
         await Withdraw(session).save_withdraw(
             user_withdraw=UserWithdraw(**withdraw_fields(amount=Decimal("10"), currency=CurrencyType.USD)),
             user_id="user123", otp_code="12345678",
         )
 
-        message = email_mock.delay.call_args.args[2]
+        message = email_mock.call_args.args[2]
         assert "10 USD" in message
         assert "37000" not in message
 

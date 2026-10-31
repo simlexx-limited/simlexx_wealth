@@ -215,7 +215,7 @@ class TestEmailOnlyOtp:
         service = AdminService(session)
         with patch(f"{self.TARGET}.send_otp_sms", AsyncMock()) as sms, \
              patch(f"{self.TARGET}.save_otp_code", AsyncMock()), \
-             patch(f"{self.TARGET}.send_email_task") as email, \
+             patch(f"{self.TARGET}.queue_email") as email, \
              patch(f"{self.TARGET}.OtpManagementService") as otp_service, \
              patch(f"{self.TARGET}.NotificationService") as notifications:
             otp_service.return_value.create_otp = AsyncMock()
@@ -232,8 +232,8 @@ class TestEmailOnlyOtp:
     def test_email_only_sends_no_sms(self):
         sent = self.run_send(email_only=True)
         sent.sms.assert_not_awaited()
-        sent.email.delay.assert_called_once()
-        assert sent.email.delay.call_args.args[0] == EMAIL
+        sent.email.assert_called_once()
+        assert sent.email.call_args.args[0] == EMAIL
 
     def test_email_only_records_the_email_channel(self):
         sent = self.run_send(email_only=True)
@@ -260,13 +260,13 @@ class TestEmailOnlyOtp:
                  patch.object(AdminService, "log_attempt", AsyncMock()), \
                  patch(f"{self.TARGET}.send_otp_sms", AsyncMock()) as sms, \
                  patch(f"{self.TARGET}.save_otp_code", AsyncMock()), \
-                 patch(f"{self.TARGET}.send_email_task") as email, \
+                 patch(f"{self.TARGET}.queue_email") as email, \
                  patch(f"{self.TARGET}.OtpManagementService") as otp_service:
                 otp_service.return_value.create_otp = AsyncMock()
                 asyncio.run(service.request_otp(RequestOTP(phone_number=PHONE), ip_address=None, endpoint="/x"))
 
             assert (sms.await_count == 1) is expect_sms
-            email.delay.assert_called_once()
+            email.assert_called_once()
 
 
 class TestCreateAnotherAdmin:

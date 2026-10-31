@@ -200,16 +200,16 @@ class TestNotifications:
         assert decide(make_session(make_profile(), client=client_account())).profile_verification_complete == APPROVED
 
     def test_the_rejection_email_tells_the_client_they_can_resubmit(self):
-        with patch.object(review_emails, "send_email_task") as task:
+        with patch.object(review_emails, "queue_email") as task:
             review_emails.send_profile_review_email("c@x.com", "Ann", False, "Blurry ID")
-        subject, body = task.delay.call_args.args[1:3]
+        subject, body = task.call_args.args[1:3]
         assert "needs changes" in subject
         assert "Blurry ID" in body and "reviewed again" in body
 
     def test_the_approval_email_carries_the_comment(self):
-        with patch.object(review_emails, "send_email_task") as task:
+        with patch.object(review_emails, "queue_email") as task:
             review_emails.send_profile_review_email("c@x.com", "Ann", True, "All good")
-        assert "approved" in task.delay.call_args.args[1] and "All good" in task.delay.call_args.args[2]
+        assert "approved" in task.call_args.args[1] and "All good" in task.call_args.args[2]
 
 
 class TestDecisionSchema:

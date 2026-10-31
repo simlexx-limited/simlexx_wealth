@@ -1,6 +1,6 @@
 from typing import Optional
 
-from app.services.email.tasks import send_email_task
+from app.services.email.tasks import queue_email
 
 SIGN_IN_NOTE = (
     "Sign in, then change this password straight away. Until you do, your account "
@@ -27,7 +27,7 @@ def send_account_created_email(
         f"{SIGN_IN_NOTE}\n\n"
         "If you were not expecting this email, please ignore it and tell us."
     )
-    send_email_task.delay(to_address, "Your Simlexx Wealth account", body)
+    queue_email(to_address, "Your Simlexx Wealth account", body)
 
 
 def send_password_reset_email(to_address: str, first_name: str, reset_link: str) -> None:
@@ -38,7 +38,7 @@ def send_password_reset_email(to_address: str, first_name: str, reset_link: str)
         f"Choose a new password with this one-time link:\n{reset_link}\n\n"
         "If you did not expect this, contact us before using the link."
     )
-    send_email_task.delay(to_address, "Reset your Simlexx Wealth password", body)
+    queue_email(to_address, "Reset your Simlexx Wealth password", body)
 
 
 def send_account_status_email(to_address: str, first_name: str, active: bool, reason: Optional[str] = None) -> None:
@@ -47,4 +47,4 @@ def send_account_status_email(to_address: str, first_name: str, active: bool, re
     body = f"Hi {first_name},\n\nYour Simlexx Wealth account has been {state}."
     if reason:
         body += f"\n\nReason: {reason}"
-    send_email_task.delay(to_address, f"Your Simlexx Wealth account was {state}", body)
+    queue_email(to_address, f"Your Simlexx Wealth account was {state}", body)
