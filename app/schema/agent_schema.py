@@ -42,4 +42,7 @@ class AgentCreated(BaseModel):
     credentials_email_queued: bool = Field(
         description="false if the email could not be queued; use reset-password to send a new link"
     )
+    temporary_password: str = Field(
+        description="Temporary, while email delivery is unreliable - relay this to the agent by hand"
+    )
     data: AgentResponse

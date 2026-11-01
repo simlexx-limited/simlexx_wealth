@@ -307,10 +307,15 @@ class TestCreateAnotherAdmin:
         assert kwargs["login_id"] == "+256700000042" and kwargs["account_label"] == "administrator"
         assert compare_hash(kwargs["temporary_password"], admin.password)   # the emailed password is the stored one
 
-    def test_the_response_never_contains_the_password(self):
+    def test_the_response_carries_the_same_password_that_was_emailed(self):
+        """
+        Temporary, while the deployed email service is unreliable: the
+        response carries the raw password too, so an admin can relay it by
+        hand - it must be the exact same one that was emailed/set on Firebase.
+        """
         with patch("app.services.admin.admin_service.agent_emails.send_account_created_email") as email:
             result = self.create(self.make())
-        assert email.call_args.kwargs["temporary_password"] not in str(result)
+        assert result["temporary_password"] == email.call_args.kwargs["temporary_password"]
 
     def test_a_duplicate_is_refused(self):
         session = self.make(existing_rows=[("sam@simlexx.com", "+256700000099")])

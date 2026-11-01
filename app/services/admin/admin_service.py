@@ -168,5 +168,7 @@ class AdminService(PhoneAuthentication):
             "message": "Administrator created. They sign in with their phone number and the "
                        "temporary password sent to their email, and must change it first",
             "credentials_email_queued": queued,
+            # temporary, while email delivery is unreliable - relay this to the admin by hand
+            "temporary_password": temporary_password,
             "data": {"user_id": str(admin.id), "phone_number": data.phone_number, "email_address": email},
         }
