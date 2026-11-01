@@ -74,13 +74,14 @@ async def create_agent(
     password by email and must change it at first sign-in. They can sign in with
     email and password, or with Google using the same email.
     """
-    user, profile, queued = await AgentService(session).create_agent(
+    user, profile, queued, temporary_password = await AgentService(session).create_agent(
         data, created_by=token_payload["user_id"],
         ip_address=await get_client_ip(request), endpoint=request.url.path,
     )
     return AgentCreated(
         message="Agent created. A temporary password was sent to their email",
         credentials_email_queued=queued,
+        temporary_password=temporary_password,
         data=agent_response(user, profile),
     )
 

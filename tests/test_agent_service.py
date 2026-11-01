@@ -69,9 +69,10 @@ class TestCreateAgent:
     def test_creates_the_account_and_profile(self, parts):
         session = make_session()
 
-        user, profile, queued = run(AgentService(session).create_agent(data(), created_by="boss"))
+        user, profile, queued, temporary_password = run(AgentService(session).create_agent(data(), created_by="boss"))
 
         assert queued is True
+        assert temporary_password
         assert user.role == UserRole.AGENT
         assert user.auth_provider == AuthProvider.FIREBASE_SIMPLE
         assert user.firebase_uid == "uid-9"
@@ -149,7 +150,7 @@ class TestCreateAgent:
         parts.email.side_effect = RuntimeError("broker down")
         session = make_session()
 
-        user, _, queued = run(AgentService(session).create_agent(data(), created_by="boss"))
+        user, _, queued, _ = run(AgentService(session).create_agent(data(), created_by="boss"))
 
         assert queued is False and user.firebase_uid == "uid-9"
         assert "NOT queued" in added(session, "SystemLogs")[0].description

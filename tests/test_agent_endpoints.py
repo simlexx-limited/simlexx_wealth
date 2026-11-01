@@ -42,12 +42,12 @@ def client(monkeypatch):
 @pytest.fixture
 def services():
     user, profile = SimpleNamespace(id="u1"), SimpleNamespace(id="p1")
-    with patch.object(AgentService, "create_agent", AsyncMock(return_value=(user, profile, True))) as create, \
+    with patch.object(AgentService, "create_agent", AsyncMock(return_value=(user, profile, True, "Str0ng!TempPass1"))) as create, \
          patch.object(AgentService, "list_agents", AsyncMock(return_value=[agent_out()])) as listing, \
          patch.object(AgentService, "get_agent", AsyncMock(return_value=agent_out())) as get, \
          patch.object(AgentService, "set_status", AsyncMock(return_value=agent_out(status=AccountStatus.DISABLE))) as status, \
          patch.object(AgentService, "reset_password", AsyncMock(return_value={"status": True, "message": "sent"})) as reset, \
-         patch.object(AdminService, "create_admin", AsyncMock(return_value={"status": True})) as create_admin, \
+         patch.object(AdminService, "create_admin", AsyncMock(return_value={"status": True, "temporary_password": "Str0ng!TempPass2"})) as create_admin, \
          patch("app.routers.simlexx.admin_router.agent_response", return_value=agent_out()):
         yield SimpleNamespace(create=create, list=listing, get=get, status=status, reset=reset, create_admin=create_admin)
 
@@ -128,7 +128,12 @@ class TestAdminAccess:
         assert call(client, "patch", f"{BASE}/agents/u1/status", {"reason": "x"}, headers).status_code == 422
         assert call(client, "patch", f"{BASE}/agents/u1/status", {"active": "maybe"}, headers).status_code == 422
 
-    def test_no_response_has_a_password_field_or_a_link(self, client, services, gate):
+    def test_the_temporary_password_only_appears_on_creation_responses(self, client, services, gate):
+        """
+        Temporary, while the deployed email service is unreliable: /admins and
+        /agents creation responses carry the raw temporary password so an
+        admin can relay it by hand - everywhere else, it must never leak.
+        """
         def keys(node):
             if isinstance(node, dict):
                 for key, value in node.items():
@@ -139,8 +144,14 @@ class TestAdminAccess:
                     yield from keys(item)
 
         headers = gate.headers("boss", UserRole.ADMIN)
+        creation_calls = {("post", f"{BASE}/admins"), ("post", f"{BASE}/agents")}
         for method, path, body in CALLS:
             response = call(client, method, path, body, headers)
             assert "http" not in response.text.lower()
-            offending = [k for k in keys(response.json()) if "password" in k and k != "must_change_password"]
+            offending = [
+                k for k in keys(response.json())
+                if "password" in k and k not in ("must_change_password", "temporary_password")
+            ]
             assert offending == [], f"{path}: {offending}"
+            has_temp_password = isinstance(response.json(), dict) and "temporary_password" in response.json()
+            assert has_temp_password == ((method, path) in creation_calls), f"{path}: {has_temp_password}"
