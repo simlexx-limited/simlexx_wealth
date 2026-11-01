@@ -1,0 +1,3 @@
+wealth-api.simlexx.com {
+    reverse_proxy api:8000
+}

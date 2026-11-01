@@ -74,14 +74,17 @@ class AgentService:
         created_by: str,
         ip_address: Optional[str] = None,
         endpoint: str = "",
-    ) -> tuple[Users, AgentProfiles, bool]:
+    ) -> tuple[Users, AgentProfiles, bool, str]:
         """
         Create an agent: a Firebase email/password account with a random temporary
         password, our own Users row and the agent profile. The temporary password
         is emailed and must be changed at first sign-in. The agent can also sign
         in with Google once, using the same (verified) email.
 
-        Returns (user, profile, credentials_email_queued).
+        Returns (user, profile, credentials_email_queued, temporary_password).
+        The temporary password is also returned in the clear - temporary
+        scaffolding for while the deployed email service is unreliable, so an
+        admin can relay it by hand. Remove once email delivery is solid.
         """
         email = str(data.email_address).lower()
         await self.ensure_unique(email, data.phone_number)
@@ -144,7 +147,7 @@ class AgentService:
             description=f"Agent account created; credentials email {'queued' if queued else 'NOT queued'}",
             ip_address=ip_address, endpoint=endpoint,
         )
-        return user, profile, queued
+        return user, profile, queued, temporary_password
 
     async def load_agent(self, user_id: str) -> tuple[Users, AgentProfiles]:
         found = await self.session.execute(
