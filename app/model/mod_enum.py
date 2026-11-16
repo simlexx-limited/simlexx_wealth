@@ -77,6 +77,7 @@ class ProductType(str, PyEnum):
 class NotificationStatus(str, PyEnum):
     PENDING = "pending"
     SENT = "sent"
+    DELIVERED = "delivered"
     FAILED = "failed"
     READ = "read"
     NOT_READ = "not_read"

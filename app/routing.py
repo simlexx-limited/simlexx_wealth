@@ -15,6 +15,7 @@ from app.routers.products.product_router import router as product_router
 from app.routers.transaction.deposit.deposit_router import router as deposit_router
 from app.routers.transaction.withdraw.withdraw_router import router as withdraw_router
 from app.routers.dashboard.dashboard_router import router as dashboard_router
+from app.routers.webhooks.africastalking_router import router as africastalking_webhook_router
 from app.services.auth.firebase_auth.auth_errors import AuthError, auth_error_handler
 
 
@@ -35,4 +36,5 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(deposit_router)
     app.include_router(withdraw_router)
     app.include_router(dashboard_router)
+    app.include_router(africastalking_webhook_router)
     app.add_exception_handler(AuthError, auth_error_handler)

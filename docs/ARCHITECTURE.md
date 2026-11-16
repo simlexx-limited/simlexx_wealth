@@ -172,8 +172,17 @@ Uploads: `R2_*` (account, keys, bucket, jurisdiction) and `SIGNED_URL_EXPIRE_SEC
 Swagger is at `http://localhost:8000/docs`. Use **Authorize** and paste **only**
 the token string (no quotes, no `Bearer`, no `refresh_token` part).
 
-Development OTPs: SMS is a placeholder that writes to
-`docker compose exec api cat /tmp/otp_code.txt`. Admin OTPs go to email.
+Development OTPs: with `SMS_PROVIDER=console` (the default) SMS is printed and
+appended to `docker compose exec api cat /tmp/otp_code.txt`. Admin OTPs go to email.
+
+SMS (`services/sms`): `SMS_PROVIDER=africastalking` sends through Africa's
+Talking's REST API (`AT_*` settings; `AT_ENVIRONMENT=sandbox` uses the sandbox,
+whose messages show up in simulator.africastalking.com). OTPs are sent inline
+with `send_otp_sms`; informational SMS go through Celery with `queue_sms`. Every
+SMS is a `NotificationsLogs` row carrying AT's message id and cost; AT posts
+delivery reports to `POST /api/v1/webhooks/africastalking/sms/delivery/<AT_CALLBACK_TOKEN>`
+(set that URL in the AT dashboard under SMS > Callback URLs > Delivery Reports),
+which moves the row to DELIVERED / FAILED.
 
 ### Gotchas we already hit
 
@@ -202,7 +211,8 @@ Development OTPs: SMS is a placeholder that writes to
 - **Signed links haven't been checked against the real bucket yet** (tests sign
   offline with dummy keys), and the bucket must be switched to private in
   Cloudflare (see "Files").
-- **SMS is a placeholder** (`services/sms`); the real provider is undecided.
+- **SMS only tested against the Africa's Talking sandbox.** Live needs an
+  approved sender ID, a topped-up account and the live `AT_*` values.
 - **No MFA** for admins or agents, only lockout and a shorter admin session.
 - **No way to deactivate an admin** (only agents). All admins are equal.
 - **Not yet run against real Firebase or R2** (everything is mocked in tests).
