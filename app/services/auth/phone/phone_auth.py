@@ -143,8 +143,9 @@ class PhoneAuthentication(Auth):
             f"Your OTP code is {otp_code} that expires after {otp_expiry}"
             )
 
+        sms_result = None
         if not email_only:
-            await send_otp_sms(phone_number=phone_number, code=otp_code)
+            sms_result = await send_otp_sms(phone_number=phone_number, code=otp_code)
 
         if email_address:
             await self.send_otp_email(
@@ -170,7 +171,9 @@ class PhoneAuthentication(Auth):
             user_id=user_id,
             channel=channel,
             notification_type="welcome_otp",
-            content=message,
+            # never store the code itself
+            content=message.replace(otp_code, "******"),
+            sms_result=sms_result,
         )
 
     async def register(self, register_data:PhoneNumberSignup, ip_address:Optional[str]=None, endpoint:str=""):
@@ -401,7 +404,14 @@ class PhoneAuthentication(Auth):
             # Admins get their codes by email only, even though they log in by phone
             email_only = result.role == UserRole.ADMIN and bool(result.email_address)
             if not email_only:
-                await send_otp_sms(phone_number=str(result.phone_number), code=otp_code)
+                sms_result = await send_otp_sms(phone_number=str(result.phone_number), code=otp_code)
+                await NotificationService(self.db_session).create_notification(
+                    user_id=user_id,
+                    channel=NotificationChannel.SMS,
+                    notification_type="password_reset_otp",
+                    content=message.replace(otp_code, "******"),
+                    sms_result=sms_result,
+                )
 
             if result.email_address:
                 await self.send_otp_email(

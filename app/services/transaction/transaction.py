@@ -10,7 +10,9 @@ from app.model.mod_enum import CurrencyType, NotificationChannel, TransactionSta
 from app.services.auth.firebase_auth.auth_errors import AccountNotFoundError
 from app.services.email.tasks import queue_email
 from app.services.logs.system_log_service import SystemLogService
+from app.services.notifications.notification_service import NotificationService
 from app.services.sms.sms_service import send_otp_sms
+from app.services.sms.tasks import queue_sms
 
 
 class Transaction:
@@ -92,9 +94,42 @@ class Transaction:
             return NotificationChannel.SMS, str(user_data.phone_number)
         raise HTTPException(status_code=400, detail="No verified email or phone number to notify the user on")
 
-    async def notify_user(self, channel:NotificationChannel, destination:str, subject:str, message:str) -> None:
-        """Send message over whichever channel resolve_notification_channel picked."""
+    async def notify_user(
+            self,
+            channel:NotificationChannel,
+            destination:str,
+            subject:str,
+            message:str,
+            *,
+            user_id:str,
+            notification_type:str,
+            otp_code:Optional[str] = None,
+            sms_text:Optional[str] = None,
+            ) -> None:
+        """
+        Send message over whichever channel resolve_notification_channel picked.
+
+        Email is always queued. For SMS:
+        - otp_code set: the code is sent inline (the user is waiting for it,
+          and a failure should reach them as an error), then logged.
+        - otherwise: sms_text (or message) is logged and queued, so a slow
+          or failing SMS gateway never holds up the request.
+        """
         if channel == NotificationChannel.EMAIL:
             queue_email(destination, subject, message)
-        else:
-            await send_otp_sms(destination, message)
+            return
+
+        notifications = NotificationService(self.db_session)
+        if otp_code is not None:
+            result = await send_otp_sms(destination, otp_code)
+            await notifications.create_notification(
+                user_id=user_id, channel=channel, notification_type=notification_type,
+                content=f"{subject}: one-time code sent", sms_result=result,
+            )
+            return
+
+        text = sms_text or message
+        notification = await notifications.create_notification(
+            user_id=user_id, channel=channel, notification_type=notification_type, content=text,
+        )
+        queue_sms(str(notification.id), destination, text)

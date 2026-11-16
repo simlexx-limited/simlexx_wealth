@@ -1,9 +1,9 @@
 from functools import lru_cache
 
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 import pycountry
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.model.mod_enum import UserRole
@@ -69,6 +69,27 @@ class Settings(BaseSettings):
     SMTP_PASSWORD:str
     SMTP_USE_TLS:bool = True
     SMTP_FROM_EMAIL:str
+
+    # SMS. "console" prints and appends to otp_code.txt (dev/CI);
+    # "africastalking" sends for real through Africa's Talking.
+    SMS_PROVIDER:Literal["console", "africastalking"] = "console"
+    SMS_TIMEOUT_SECONDS:float = 10
+    AT_USERNAME:str = "sandbox"              # must be exactly "sandbox" in the sandbox
+    AT_API_KEY:str = ""
+    AT_ENVIRONMENT:Literal["sandbox", "live"] = "sandbox"
+    AT_SENDER_ID:str = ""                    # approved alphanumeric sender ID / shortcode; empty = AT default
+    AT_CALLBACK_TOKEN:str = ""               # secret path segment of the delivery-report webhook URL
+
+    @model_validator(mode="after")
+    def require_at_api_key(self):
+        if self.SMS_PROVIDER == "africastalking" and not self.AT_API_KEY:
+            raise ValueError("AT_API_KEY is required when SMS_PROVIDER=africastalking")
+        return self
+
+    @property
+    def at_sms_url(self) -> str:
+        host = "api.sandbox.africastalking.com" if self.AT_ENVIRONMENT == "sandbox" else "api.africastalking.com"
+        return f"https://{host}/version1/messaging"
 
     # JWT token
     SECRET_ACCESS_KEY:str
