@@ -23,7 +23,6 @@ boto3
 
 # --- Notifications ---
 aiosmtplib
-twilio
 
 # --- Outbound calls to Unit Master / custodian bank adapters ---
 httpx

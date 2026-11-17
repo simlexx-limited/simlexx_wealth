@@ -8,7 +8,7 @@ celery_app = Celery(
     "simlexx",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.services.email.tasks"],
+    include=["app.services.email.tasks", "app.services.sms.tasks"],
 )
 
 celery_app.conf.update(
