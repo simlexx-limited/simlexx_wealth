@@ -258,6 +258,13 @@ class Notifications(Base):
     sent_at:Mapped[datetime] = mapped_column(
                     DateTime(timezone=True), server_default=func.now()
                     )
+    # SMS delivery tracking - filled from the provider's send response and
+    # its delivery-report webhook
+    provider:Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    provider_message_id:Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    cost:Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    failure_reason:Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    delivered_at:Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     user:Mapped["Users"] = relationship("Users", back_populates="notifications")
 
 # ============================================================

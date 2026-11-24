@@ -1,21 +1,43 @@
-import tempfile
-from pathlib import Path
+import logging
 
-# The app's WORKDIR (/app) is root-owned in the container while the process
-# runs as a non-root user, so a relative path here is not writable there.
-# The OS temp dir is writable by any user in any environment (host or
-# container) - retrieve with `docker exec simlexx_api cat /tmp/otp_code.txt`.
-OTP_CODE_FILE = Path(tempfile.gettempdir()) / "otp_code.txt"
+from app.config.setting import get_settings
+from app.services.sms import sms_templates
+from app.services.sms.africastalking_client import send_via_africastalking
+from app.services.sms.console_client import send_via_console
+from app.services.sms.sms_errors import SmsSendError
+from app.services.sms.sms_result import SmsResult
+
+logger = logging.getLogger(__name__)
 
 
-async def send_otp_sms(phone_number: str, code: str) -> None:
+def mask_phone(phone_number: str) -> str:
+    """+256712345123 -> +2567*****123 - safe to put in logs."""
+    if len(phone_number) <= 7:
+        return "*" * len(phone_number)
+    return phone_number[:5] + "*" * (len(phone_number) - 8) + phone_number[-3:]
+
+
+async def send_sms(to: str, message: str) -> SmsResult:
     """
-    Placeholder SMS delivery until a dedicated SMS provider is wired in -
-    prints the OTP and appends it to otp_code.txt so it can be shared with
-    the team for testing. Swap the body of this function out once an SMS
-    service is chosen; callers don't need to change.
+    Send one SMS now through the configured provider (SMS_PROVIDER). Use
+    queue_sms (app.services.sms.tasks) for anything that doesn't need to
+    reach the user before the request returns.
+
+    Raises an SmsSendError subclass on failure.
     """
-    line = f"OTP for {phone_number}: {code}"
-    print(line)
-    with OTP_CODE_FILE.open("a") as f:
-        f.write(line + "\n")
+    provider = get_settings().SMS_PROVIDER
+    try:
+        if provider == "africastalking":
+            result = await send_via_africastalking(to, message)
+        else:
+            result = await send_via_console(to, message)
+    except SmsSendError as exc:
+        logger.warning("SMS to %s via %s failed: %s", mask_phone(to), provider, type(exc).__name__)
+        raise
+    logger.info("SMS to %s via %s accepted (id=%s)", mask_phone(to), provider, result.message_id)
+    return result
+
+
+async def send_otp_sms(phone_number: str, code: str) -> SmsResult:
+    """Send a one-time code by SMS, inline."""
+    return await send_sms(phone_number, sms_templates.otp_message(code))

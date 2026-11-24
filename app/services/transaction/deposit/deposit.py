@@ -6,6 +6,7 @@ from typing import Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.sms import sms_templates
 from app.model.models import (
     UserAccount,
     Transaction as TransactionModel,
@@ -76,7 +77,10 @@ class Deposit(Transaction):
             )
         else:
             message = otp_code
-        await self.notify_user(channel, destination, "Confirm your deposit", message)
+        await self.notify_user(
+            channel, destination, "Confirm your deposit", message,
+            user_id=user_id, notification_type="deposit_otp", otp_code=otp_code,
+        )
 
         await SystemLogService(self.db_session).create_log(
             action="send_otp_deposit", entity="OtpVerification", user_id=user_id,
@@ -201,6 +205,8 @@ class Deposit(Transaction):
         await self.notify_user(
             channel, destination, "Deposit confirmed",
             f"Your deposit of {user_deposit.amount} {user_deposit.currency.value} was confirmed.",
+            user_id=user_id, notification_type="deposit_confirmed",
+            sms_text=sms_templates.deposit_confirmed(user_deposit.amount, user_deposit.currency.value),
         )
 
         profile_result = await self.db_session.execute(

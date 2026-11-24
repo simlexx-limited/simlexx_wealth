@@ -6,6 +6,7 @@ from typing import Optional, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.services.sms import sms_templates
 from app.model.models import (
     UserAccount,
     Transaction as TransactionModel,
@@ -66,7 +67,10 @@ class Withdraw(Transaction):
             )
         else:
             message = otp_code
-        await self.notify_user(channel, destination, "Confirm your withdrawal", message)
+        await self.notify_user(
+            channel, destination, "Confirm your withdrawal", message,
+            user_id=user_id, notification_type="withdraw_otp", otp_code=otp_code,
+        )
 
         await SystemLogService(self.db_session).create_log(
             action="send_otp_withdraw", entity="OtpVerification", user_id=user_id,
@@ -201,6 +205,8 @@ class Withdraw(Transaction):
         await self.notify_user(
             channel, destination, "Withdrawal confirmed",
             f"Your withdrawal of {user_withdraw.amount} {user_withdraw.currency.value} was confirmed.",
+            user_id=user_id, notification_type="withdraw_confirmed",
+            sms_text=sms_templates.withdrawal_confirmed(user_withdraw.amount, user_withdraw.currency.value),
         )
 
         profile_result = await self.db_session.execute(
